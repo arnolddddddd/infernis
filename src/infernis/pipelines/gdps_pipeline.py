@@ -17,8 +17,8 @@ from infernis.config import settings
 
 logger = logging.getLogger(__name__)
 
-# MSC Datamart base URL for GDPS
-BASE_URL = "https://dd.weather.gc.ca/model_gdps/15km"
+# MSC Datamart base URL for GDPS (restructured late 2025)
+BASE_URL = "https://dd.weather.gc.ca/today/model_gem_global/15km/grib2/lat_lon"
 
 
 class GDPSPipeline:
@@ -53,7 +53,8 @@ class GDPSPipeline:
 
         for fh in self.FORECAST_HOURS:
             for var in variables:
-                filename = f"{date_str}T{run_hour:02d}Z_MSC_GDPS_{var}_LatLon0.15_PT{fh:03d}H.grib2"
+                # New CMC filename: CMC_glb_{VAR}_latlon.15x.15_{YYYYMMDDHH}_P{hhh}.grib2
+                filename = f"CMC_glb_{var}_latlon.15x.15_{date_str}{run_hour:02d}_P{fh:03d}.grib2"
                 filepath = run_dir / filename
 
                 if filepath.exists() and filepath.stat().st_size > 0:
@@ -191,7 +192,11 @@ class GDPSPipeline:
 
         import re
 
+        # Match both old PT003H and new _P003 filename formats
         match = re.search(r"PT(\d{3})H", str(filepath))
+        if match:
+            return int(match.group(1))
+        match = re.search(r"_P(\d{3})\.grib2", str(filepath))
         if match:
             return int(match.group(1))
         return None

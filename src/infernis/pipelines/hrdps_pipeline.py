@@ -25,8 +25,8 @@ HRDPS_VARIABLES = {
     "APCP": "precip_mm",
 }
 
-# MSC Datamart base URL for HRDPS continental domain
-BASE_URL = "https://dd.weather.gc.ca/model_hrdps/continental/2.5km"
+# MSC Datamart base URL for HRDPS continental domain (restructured late 2025)
+BASE_URL = "https://dd.weather.gc.ca/today/model_hrdps/continental/2.5km"
 
 
 class HRDPSPipeline:
@@ -56,7 +56,8 @@ class HRDPSPipeline:
         run_dir.mkdir(parents=True, exist_ok=True)
 
         downloaded = []
-        variables = ["TMP_TGL_2", "RH_TGL_2", "WIND_TGL_10", "WDIR_TGL_10", "APCP_SFC_0"]
+        # New HRDPS variable naming: TGL_2 → AGL-2m, TGL_10 → AGL-10m, SFC_0 → Sfc
+        variables = ["TMP_AGL-2m", "RH_AGL-2m", "WIND_AGL-10m", "WDIR_AGL-10m", "APCP_Sfc"]
 
         for fh in self.FORECAST_HOURS:
             for var in variables:
