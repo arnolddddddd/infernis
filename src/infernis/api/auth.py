@@ -33,12 +33,8 @@ TIER_LIMITS = {
     "enterprise": 100_000,
 }
 
-# Endpoints restricted by tier (paths relative to api_prefix)
-# Free tier gets point queries; pro adds grid; enterprise adds heatmap
-TIER_RESTRICTED = {
-    "/risk/grid": {"pro", "enterprise"},
-    "/risk/heatmap": {"enterprise"},
-}
+# No endpoint restrictions — all endpoints available to all tiers, metered on daily limit
+TIER_RESTRICTED = {}
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
