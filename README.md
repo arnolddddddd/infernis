@@ -48,15 +48,15 @@ A free, live instance runs at [api.infernis.ca](https://api.infernis.ca/v1/docs)
 
 ### 2. Run your own instance (this repo)
 
-Clone this repo, download the raw data with the included scripts, train your own models, and deploy your own API at **1 km resolution** (~2.1M cells). This gives you full control, higher precision, and no rate limits.
+Clone this repo and deploy your own API at **1 km resolution** (~2.1M cells). Pre-trained models are included — you can be up and running without downloading training data or training anything. If you want to retrain or customize, the full pipeline (21 download scripts + training code) is included too.
 
 | What you get | Details |
 |---|---|
 | Resolution | 1 km (~2,113,524 cells) — configurable |
-| Model | XGBoost, 28 features, AUC-ROC 0.974 (test) |
-| CNN available | FireUNet spatial model (AUC 0.815), trained on MPS/CUDA |
-| Training data | 21 download scripts, 10 fire seasons (2015–2024) |
-| Requirements | Python 3.11+, PostgreSQL 16 + PostGIS 3.4, Redis 7, ~546 GB raw data |
+| Pre-trained models | XGBoost 5 km + 1 km, CNN FireUNet 5 km + 1 km, BEC calibration — all included |
+| Model performance | XGBoost 1 km: AUC-ROC 0.974, CNN: AUC 0.815 |
+| Optional: retrain | 21 download scripts, 10 fire seasons (2015–2024), ~546 GB raw data |
+| Requirements | Python 3.11+, PostgreSQL 16 + PostGIS 3.4, Redis 7 |
 
 ## Try the Hosted API
 
