@@ -156,15 +156,10 @@ data/raw/
 data/processed/
 data/download_log.txt
 
-# Trained models (binary)
-models/*.json
+# Trained models — large .pt files use Git LFS
 models/*.ubj
 models/*.bin
-models/*.pt
 !models/.gitkeep
-!models/training_metrics.json
-!models/feature_importance.json
-!models/shap_importance.json
 
 # GEE credentials (migrated to env vars)
 docs/GEE/

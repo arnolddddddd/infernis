@@ -31,14 +31,11 @@ DAILY_VARIABLES = [
     "wind_direction_10m_dominant",
     "precipitation_sum",
     "et0_fao_evapotranspiration",
-]
-
-# Hourly variables for soil moisture (aggregated to daily means)
-HOURLY_VARIABLES = [
-    "soil_moisture_0_to_7cm",
-    "soil_moisture_7_to_28cm",
-    "soil_moisture_28_to_100cm",
-    "soil_moisture_100_to_255cm",
+    # Soil moisture as daily means (avoid hourly data which 4x's response size)
+    "soil_moisture_0_to_7cm_mean",
+    "soil_moisture_7_to_28cm_mean",
+    "soil_moisture_28_to_100cm_mean",
+    "soil_moisture_100_to_255cm_mean",
 ]
 
 # Max coordinates per batch request (tested: 350 works, 400 hits URI limit)
@@ -221,7 +218,6 @@ class OpenMeteoPipeline:
             "latitude": ",".join(f"{lat:.4f}" for lat in lats),
             "longitude": ",".join(f"{lon:.4f}" for lon in lons),
             "daily": ",".join(DAILY_VARIABLES),
-            "hourly": ",".join(HOURLY_VARIABLES),
             "forecast_days": min(
                 forecast_days + 3, 16
             ),  # +3 buffer (day 0 is today, GEM edge days may be None)
@@ -267,13 +263,12 @@ class OpenMeteoPipeline:
             precips = daily.get("precipitation_sum", [])
             ets = daily.get("et0_fao_evapotranspiration", [])
 
-            # Extract hourly soil moisture arrays and compute daily means
-            hourly = location_data.get("hourly", {})
-            sm_layers = [
-                hourly.get("soil_moisture_0_to_7cm", []),
-                hourly.get("soil_moisture_7_to_28cm", []),
-                hourly.get("soil_moisture_28_to_100cm", []),
-                hourly.get("soil_moisture_100_to_255cm", []),
+            # Soil moisture from daily means
+            sm_arrays = [
+                daily.get("soil_moisture_0_to_7cm_mean", []),
+                daily.get("soil_moisture_7_to_28cm_mean", []),
+                daily.get("soil_moisture_28_to_100cm_mean", []),
+                daily.get("soil_moisture_100_to_255cm_mean", []),
             ]
             sm_keys = ["soil_moisture_1", "soil_moisture_2", "soil_moisture_3", "soil_moisture_4"]
 
@@ -292,12 +287,6 @@ class OpenMeteoPipeline:
                     result[day]["precip_24h_mm"][cell_idx] = precips[idx]
                 if idx < len(ets) and ets[idx] is not None:
                     result[day]["evapotrans_mm"][cell_idx] = ets[idx]
-
-                # Aggregate hourly soil moisture to daily mean (24 hours per day)
-                hour_start = day * 24
-                hour_end = hour_start + 24
-                for sm_layer, sm_key in zip(sm_layers, sm_keys):
-                    if hour_end <= len(sm_layer):
-                        day_vals = [v for v in sm_layer[hour_start:hour_end] if v is not None]
-                        if day_vals:
-                            result[day][sm_key][cell_idx] = sum(day_vals) / len(day_vals)
+                for sm_arr, sm_key in zip(sm_arrays, sm_keys):
+                    if idx < len(sm_arr) and sm_arr[idx] is not None:
+                        result[day][sm_key][cell_idx] = sm_arr[idx]

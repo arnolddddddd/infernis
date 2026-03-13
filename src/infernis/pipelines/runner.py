@@ -73,16 +73,17 @@ def run_daily_pipeline(target_date: date | None = None):
             raise RuntimeError("Pipeline returned no predictions")
 
         # Persist FWI state to Redis
-        from infernis.services.cache import cache_fwi_state, cache_predictions
+        from infernis.services.cache import cache_fwi_state, cache_grid_cells, cache_predictions
 
         cache_fwi_state(pipeline._prev_fwi_state)
 
         # Write predictions to database
         _save_predictions_to_db(predictions, target_date)
 
-        # Write predictions to Redis cache
+        # Write predictions + grid cells to Redis cache
         run_time = datetime.now(timezone.utc).isoformat()
         cache_predictions(predictions, target_date.isoformat())
+        cache_grid_cells(grid_cells)
 
         # Update in-memory API cache
         from infernis.api.routes import set_predictions_cache

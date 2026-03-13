@@ -185,7 +185,22 @@ python scripts/download/21_bc_bec.py        # Biogeoclimatic zones (BC Gov)
 
 Some scripts require API keys (CDS, GEE, NASA Earthdata, FIRMS). See `.env.example` for what's needed.
 
-### Train models
+### Pre-trained models (included)
+
+All pre-trained model weights are included in this repo. CNN models (`.pt` files) use Git LFS.
+
+| Model | File | Size |
+|-------|------|------|
+| XGBoost 5 km (24 features) | `models/fire_core_v1.json` | 19 MB |
+| XGBoost 1 km (28 features) | `models/fire_core_1km_v1.json` | 18 MB |
+| CNN FireUNet 5 km | `models/heatmap_v1.pt` | 30 MB (LFS) |
+| CNN FireUNet 1 km | `models/heatmap_1km_v1.pt` | 119 MB (LFS) |
+| BEC calibration 5 km | `models/bec_calibration.json` | 1.4 KB |
+| BEC calibration 1 km | `models/bec_calibration_1km.json` | 1.4 KB |
+
+To pull LFS files after cloning: `git lfs pull`
+
+### Train your own models
 
 ```bash
 # Process raw data into feature matrices

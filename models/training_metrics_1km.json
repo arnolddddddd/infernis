@@ -1,0 +1,32 @@
+{
+  "grid_resolution_km": 1,
+  "grid_cells": 2113524,
+  "years": "2015-2026",
+  "xgboost": {
+    "model_path": "models/fire_core_1km_v1.json",
+    "test_auc_roc": 0.9735,
+    "test_avg_precision": 0.7935,
+    "test_brier_score": 0.0356,
+    "folds": 5,
+    "max_rounds": 1000
+  },
+  "cnn": {
+    "model_path": "models/heatmap_1km_v1.pt",
+    "test_auc_roc": 0.8153,
+    "epochs_trained": 24,
+    "early_stopped": true,
+    "device": "mps",
+    "training_minutes": 178.3
+  },
+  "bec_calibration": {
+    "path": "models/bec_calibration_1km.json",
+    "zones_calibrated": 14
+  },
+  "training_data": {
+    "positive_samples": 27146,
+    "negative_samples": 271460,
+    "negative_ratio": 10.0,
+    "feature_parquets": 1386,
+    "feature_storage_gb": 546
+  }
+}

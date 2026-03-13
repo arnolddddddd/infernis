@@ -194,6 +194,38 @@ def load_forecasts_from_redis() -> tuple[dict[str, list[dict]], str | None]:
     return forecasts, base_date
 
 
+def cache_grid_cells(grid_cells: dict, ttl_seconds: int = 172800):
+    """Persist grid_cells dict to Redis so startup doesn't need to regenerate the grid."""
+    r = get_redis()
+    if r is None:
+        return
+
+    BATCH_SIZE = 10_000
+    items = list(grid_cells.items())
+
+    for batch_start in range(0, len(items), BATCH_SIZE):
+        batch = items[batch_start : batch_start + BATCH_SIZE]
+        pipe = r.pipeline()
+        for cell_id, cell in batch:
+            pipe.hset("grid:cells", cell_id, json.dumps(cell))
+        pipe.execute()
+
+    logger.info("Cached %d grid cells to Redis", len(grid_cells))
+
+
+def load_grid_cells_from_redis() -> dict:
+    """Load grid_cells dict from Redis."""
+    r = get_redis()
+    if r is None:
+        return {}
+    raw = r.hgetall("grid:cells")
+    if not raw:
+        return {}
+    grid_cells = {cell_id: json.loads(data) for cell_id, data in raw.items()}
+    logger.info("Loaded %d grid cells from Redis", len(grid_cells))
+    return grid_cells
+
+
 def redis_healthy() -> bool:
     """Check if Redis is reachable."""
     r = get_redis()

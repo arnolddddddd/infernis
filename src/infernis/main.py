@@ -62,33 +62,27 @@ async def lifespan(app: FastAPI):
 
     # Load cached predictions from Redis (survive deploys without re-running pipeline)
     try:
-        from infernis.pipelines.runner import _load_grid
-        from infernis.services.cache import load_forecasts_from_redis, load_predictions_from_redis
+        from infernis.services.cache import (
+            load_forecasts_from_redis,
+            load_grid_cells_from_redis,
+            load_predictions_from_redis,
+        )
 
         predictions, run_time = load_predictions_from_redis()
-        if predictions:
-            grid_df = _load_grid()
-            if grid_df is not None:
-                grid_cells = {
-                    row["cell_id"]: {
-                        "lat": row["lat"],
-                        "lon": row["lon"],
-                        "bec_zone": row.get("bec_zone", ""),
-                        "fuel_type": row.get("fuel_type", ""),
-                        "elevation_m": row.get("elevation_m", 0),
-                    }
-                    for _, row in grid_df.iterrows()
-                }
-                from infernis.api.routes import set_predictions_cache
+        grid_cells = load_grid_cells_from_redis()
 
-                set_predictions_cache(predictions, grid_cells, run_time)
-                logger.info(
-                    "Loaded %d predictions from Redis (last run: %s) — API ready",
-                    len(predictions),
-                    run_time,
-                )
-            else:
-                logger.warning("Grid could not be loaded — skipping Redis cache restore")
+        if predictions and grid_cells:
+            from infernis.api.routes import set_predictions_cache
+
+            set_predictions_cache(predictions, grid_cells, run_time)
+            logger.info(
+                "Loaded %d predictions + %d grid cells from Redis (last run: %s) — API ready",
+                len(predictions),
+                len(grid_cells),
+                run_time,
+            )
+        elif predictions:
+            logger.warning("Predictions in Redis but no grid cells — API will wait for pipeline")
         else:
             logger.info("Redis cache empty — API will be available after first pipeline run")
 
