@@ -68,13 +68,10 @@ class ForecastPipeline:
         grid_lons = grid_df["lon"].values
         n_cells = len(cell_ids)
 
-        # Step 1: Download and process HRDPS (days 1-2)
-        hrdps_weather = self._get_hrdps_weather(target_date, grid_lats, grid_lons)
+        # Step 1: Fetch forecast weather (Open-Meteo primary, GRIB2 fallback)
+        all_weather = self._get_forecast_weather(target_date, grid_lats, grid_lons)
 
-        # Step 2: Download and process GDPS (days 3-10)
-        gdps_weather = self._get_gdps_weather(target_date, grid_lats, grid_lons)
-
-        # Step 3: Roll forward FWI and predict for each day
+        # Step 2: Roll forward FWI and predict for each day
         forecasts: dict[str, list[dict]] = {cid: [] for cid in cell_ids}
 
         # Start with current FWI state
@@ -87,12 +84,9 @@ class ForecastPipeline:
             valid_date = target_date + timedelta(days=lead_day)
 
             # Get weather for this day
-            if lead_day <= 2 and lead_day in hrdps_weather:
-                weather = hrdps_weather[lead_day]
-                source = "HRDPS"
-            elif lead_day in gdps_weather:
-                weather = gdps_weather[lead_day]
-                source = "GDPS"
+            if lead_day in all_weather:
+                weather = all_weather[lead_day]
+                source = "GEM" if lead_day <= 2 else "GEM_GLOBAL"
             else:
                 logger.warning("No weather data for day+%d, stopping forecast", lead_day)
                 break
@@ -159,16 +153,44 @@ class ForecastPipeline:
         )
         return forecasts
 
-    def _get_hrdps_weather(
+    def _get_forecast_weather(
         self, target_date: date, grid_lats: np.ndarray, grid_lons: np.ndarray
     ) -> dict[int, dict[str, np.ndarray]]:
-        """Download and process HRDPS data."""
+        """Fetch forecast weather. Open-Meteo primary, GRIB2 fallback, synthetic last resort."""
+        # Primary: Open-Meteo API (lightweight JSON, same GEM model data)
+        try:
+            from infernis.pipelines.openmeteo_pipeline import OpenMeteoPipeline
+
+            openmeteo = OpenMeteoPipeline(max_days=self.max_days)
+            weather = openmeteo.fetch_forecast_weather(grid_lats, grid_lons, self.max_days)
+            if weather and len(weather) >= self.max_days:
+                logger.info("Forecast weather: Open-Meteo (GEM seamless) — %d days", len(weather))
+                return weather
+            logger.warning("Open-Meteo returned incomplete data (%d days)", len(weather))
+        except Exception as e:
+            logger.warning("Open-Meteo failed: %s — trying GRIB2 fallback", e)
+
+        # Fallback: GRIB2 downloads from MSC Datamart
+        all_weather: dict[int, dict[str, np.ndarray]] = {}
+        all_weather.update(self._get_hrdps_weather_grib2(target_date, grid_lats, grid_lons))
+        all_weather.update(self._get_gdps_weather_grib2(target_date, grid_lats, grid_lons))
+
+        if all_weather:
+            logger.info("Forecast weather: GRIB2 fallback — %d days", len(all_weather))
+            return all_weather
+
+        # Last resort: synthetic weather
+        logger.error("All forecast weather sources failed — using synthetic fallback")
+        return self._synthetic_weather(grid_lats, days=list(range(1, self.max_days + 1)))
+
+    def _get_hrdps_weather_grib2(
+        self, target_date: date, grid_lats: np.ndarray, grid_lons: np.ndarray
+    ) -> dict[int, dict[str, np.ndarray]]:
+        """Download and process HRDPS GRIB2 data (fallback)."""
         try:
             from infernis.pipelines.hrdps_pipeline import HRDPSPipeline
 
             hrdps = HRDPSPipeline()
-
-            # Try 12Z run first, then 06Z
             for run_hour in [12, 6, 0]:
                 try:
                     files = hrdps.download_run(run_hour=run_hour, target_date=target_date)
@@ -176,45 +198,33 @@ class ForecastPipeline:
                         run_dir = files[0].parent
                         return hrdps.process_for_grid(run_dir, grid_lats, grid_lons)
                 except Exception as e:
-                    logger.warning("HRDPS %02dZ failed: %s", run_hour, e)
-
+                    logger.warning("HRDPS %02dZ GRIB2 failed: %s", run_hour, e)
         except Exception as e:
-            logger.error("HRDPS pipeline failed: %s", e)
+            logger.warning("HRDPS GRIB2 pipeline failed: %s", e)
+        return {}
 
-        logger.warning("No HRDPS data available — using synthetic weather for days 1-2")
-        return self._synthetic_weather(grid_lats, days=[1, 2])
-
-    def _get_gdps_weather(
+    def _get_gdps_weather_grib2(
         self, target_date: date, grid_lats: np.ndarray, grid_lons: np.ndarray
     ) -> dict[int, dict[str, np.ndarray]]:
-        """Download and process GDPS data."""
+        """Download and process GDPS GRIB2 data (fallback)."""
         try:
             from infernis.pipelines.gdps_pipeline import GDPSPipeline
 
             gdps = GDPSPipeline()
-
             for run_hour in [0, 12]:
                 try:
                     files = gdps.download_run(run_hour=run_hour, target_date=target_date)
                     if files:
                         run_dir = files[0].parent
                         return gdps.process_for_grid(
-                            run_dir,
-                            grid_lats,
-                            grid_lons,
-                            start_day=3,
-                            max_day=self.max_days,
+                            run_dir, grid_lats, grid_lons,
+                            start_day=3, max_day=self.max_days,
                         )
                 except Exception as e:
-                    logger.warning("GDPS %02dZ failed: %s", run_hour, e)
-
+                    logger.warning("GDPS %02dZ GRIB2 failed: %s", run_hour, e)
         except Exception as e:
-            logger.error("GDPS pipeline failed: %s", e)
-
-        logger.warning(
-            "No GDPS data available — using synthetic weather for days 3-%d", self.max_days
-        )
-        return self._synthetic_weather(grid_lats, days=list(range(3, self.max_days + 1)))
+            logger.warning("GDPS GRIB2 pipeline failed: %s", e)
+        return {}
 
     def _synthetic_weather(
         self, grid_lats: np.ndarray, days: list[int]

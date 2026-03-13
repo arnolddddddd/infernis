@@ -1,0 +1,236 @@
+"""Open-Meteo forecast weather provider.
+
+Fetches forecast weather data from the Open-Meteo API using the GEM model
+(HRDPS for days 1-2, GEM Global for days 3+). This replaces GRIB2 downloads
+from MSC Datamart which are too heavy for container deployments.
+
+Open-Meteo serves the same underlying GEM/HRDPS/GDPS data as MSC Datamart
+but as lightweight JSON instead of raw GRIB2 files.
+
+License: CC BY 4.0 (free for commercial and non-commercial use with attribution).
+Rate limit: 10,000 calls/day (free tier, no API key required).
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from datetime import date
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+# Open-Meteo forecast endpoint
+BASE_URL = "https://api.open-meteo.com/v1/forecast"
+
+# Daily variables needed for FWI computation + feature matrix
+DAILY_VARIABLES = [
+    "temperature_2m_max",
+    "relative_humidity_2m_min",
+    "wind_speed_10m_max",
+    "wind_direction_10m_dominant",
+    "precipitation_sum",
+    "et0_fao_evapotranspiration",
+]
+
+# Max coordinates per batch request (tested: 100 works in ~1s)
+BATCH_SIZE = 100
+
+# Pause between batches to respect rate limits (600/min = 100ms min)
+BATCH_DELAY_S = 0.15
+
+
+class OpenMeteoPipeline:
+    """Fetches forecast weather from Open-Meteo for BC grid cells."""
+
+    def __init__(self, max_days: int = 10):
+        self.max_days = max_days
+
+    def fetch_forecast_weather(
+        self,
+        grid_lats: np.ndarray,
+        grid_lons: np.ndarray,
+        forecast_days: int | None = None,
+    ) -> dict[int, dict[str, np.ndarray]]:
+        """Fetch forecast weather for all grid cells.
+
+        Args:
+            grid_lats: Array of latitudes for each grid cell.
+            grid_lons: Array of longitudes for each grid cell.
+            forecast_days: Number of forecast days (default: self.max_days).
+
+        Returns:
+            dict mapping lead_day (1-based) to weather feature dict.
+            Each weather dict has keys: temperature_c, rh_pct, wind_kmh,
+            wind_dir_deg, precip_24h_mm — each a 1D array of length n_cells.
+        """
+        import httpx
+
+        forecast_days = forecast_days or self.max_days
+        n_cells = len(grid_lats)
+
+        # Pre-allocate result arrays for each day
+        result: dict[int, dict[str, np.ndarray]] = {}
+        for day in range(1, forecast_days + 1):
+            result[day] = {
+                "temperature_c": np.full(n_cells, np.nan),
+                "rh_pct": np.full(n_cells, np.nan),
+                "wind_kmh": np.full(n_cells, np.nan),
+                "wind_dir_deg": np.full(n_cells, np.nan),
+                "precip_24h_mm": np.full(n_cells, np.nan),
+                "evapotrans_mm": np.full(n_cells, np.nan),
+            }
+
+        # Process in batches
+        n_batches = (n_cells + BATCH_SIZE - 1) // BATCH_SIZE
+        cells_fetched = 0
+        cells_failed = 0
+
+        logger.info(
+            "Open-Meteo: fetching %d-day forecast for %d cells in %d batches",
+            forecast_days,
+            n_cells,
+            n_batches,
+        )
+
+        with httpx.Client(timeout=30.0) as client:
+            for batch_idx in range(n_batches):
+                start = batch_idx * BATCH_SIZE
+                end = min(start + BATCH_SIZE, n_cells)
+                batch_lats = grid_lats[start:end]
+                batch_lons = grid_lons[start:end]
+
+                try:
+                    batch_data = self._fetch_batch(
+                        client, batch_lats, batch_lons, forecast_days
+                    )
+                    self._fill_result(result, batch_data, start, end, forecast_days)
+                    cells_fetched += end - start
+                except Exception as e:
+                    logger.warning(
+                        "Open-Meteo batch %d/%d failed: %s", batch_idx + 1, n_batches, e
+                    )
+                    cells_failed += end - start
+
+                # Progress logging every 100 batches
+                if (batch_idx + 1) % 100 == 0 or batch_idx == n_batches - 1:
+                    logger.info(
+                        "Open-Meteo progress: %d/%d batches (%d cells fetched, %d failed)",
+                        batch_idx + 1,
+                        n_batches,
+                        cells_fetched,
+                        cells_failed,
+                    )
+
+                # Rate limit pause
+                if batch_idx < n_batches - 1:
+                    time.sleep(BATCH_DELAY_S)
+
+        # Fill any NaN cells with reasonable defaults (shouldn't happen unless API fails)
+        for day in range(1, forecast_days + 1):
+            weather = result[day]
+            for key, default in [
+                ("temperature_c", 15.0),
+                ("rh_pct", 60.0),
+                ("wind_kmh", 10.0),
+                ("wind_dir_deg", 225.0),
+                ("precip_24h_mm", 0.0),
+                ("evapotrans_mm", 2.0),
+            ]:
+                nan_mask = np.isnan(weather[key])
+                if nan_mask.any():
+                    weather[key][nan_mask] = default
+                    if day == 1:  # Only log once
+                        logger.warning(
+                            "Open-Meteo: %d cells have NaN %s on day %d, using default %.1f",
+                            nan_mask.sum(),
+                            key,
+                            day,
+                            default,
+                        )
+
+        success_pct = cells_fetched / n_cells * 100 if n_cells > 0 else 0
+        logger.info(
+            "Open-Meteo: complete — %d/%d cells (%.1f%%), %d failed",
+            cells_fetched,
+            n_cells,
+            success_pct,
+            cells_failed,
+        )
+
+        return result
+
+    def _fetch_batch(
+        self,
+        client,
+        lats: np.ndarray,
+        lons: np.ndarray,
+        forecast_days: int,
+    ) -> list[dict]:
+        """Fetch forecast for a batch of coordinates.
+
+        Returns list of per-location daily forecast dicts.
+        """
+        params = {
+            "latitude": ",".join(f"{lat:.4f}" for lat in lats),
+            "longitude": ",".join(f"{lon:.4f}" for lon in lons),
+            "daily": ",".join(DAILY_VARIABLES),
+            "forecast_days": min(forecast_days + 3, 16),  # +3 buffer (day 0 is today, GEM edge days may be None)
+            "models": "gem_seamless",
+            "timezone": "UTC",
+        }
+
+        resp = client.get(BASE_URL, params=params)
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Single location returns a dict, multiple returns a list
+        if isinstance(data, dict):
+            if "error" in data and data["error"]:
+                raise RuntimeError(f"Open-Meteo error: {data.get('reason', 'unknown')}")
+            return [data]
+        return data
+
+    def _fill_result(
+        self,
+        result: dict[int, dict[str, np.ndarray]],
+        batch_data: list[dict],
+        start: int,
+        end: int,
+        forecast_days: int,
+    ):
+        """Fill result arrays from a batch of Open-Meteo responses."""
+        for i, location_data in enumerate(batch_data):
+            cell_idx = start + i
+            if cell_idx >= end:
+                break
+
+            daily = location_data.get("daily")
+            if not daily:
+                continue
+
+            # Open-Meteo returns forecast_days+1 values (today + N days)
+            # We want lead_day 1 = tomorrow, so skip index 0 (today)
+            temps = daily.get("temperature_2m_max", [])
+            rhs = daily.get("relative_humidity_2m_min", [])
+            winds = daily.get("wind_speed_10m_max", [])
+            wdirs = daily.get("wind_direction_10m_dominant", [])
+            precips = daily.get("precipitation_sum", [])
+            ets = daily.get("et0_fao_evapotranspiration", [])
+
+            for day in range(1, forecast_days + 1):
+                # Index into the daily arrays: day 1 = index 1 (skip today at index 0)
+                idx = day
+                if idx < len(temps) and temps[idx] is not None:
+                    result[day]["temperature_c"][cell_idx] = temps[idx]
+                if idx < len(rhs) and rhs[idx] is not None:
+                    result[day]["rh_pct"][cell_idx] = rhs[idx]
+                if idx < len(winds) and winds[idx] is not None:
+                    result[day]["wind_kmh"][cell_idx] = winds[idx]
+                if idx < len(wdirs) and wdirs[idx] is not None:
+                    result[day]["wind_dir_deg"][cell_idx] = wdirs[idx]
+                if idx < len(precips) and precips[idx] is not None:
+                    result[day]["precip_24h_mm"][cell_idx] = precips[idx]
+                if idx < len(ets) and ets[idx] is not None:
+                    result[day]["evapotrans_mm"][cell_idx] = ets[idx]
