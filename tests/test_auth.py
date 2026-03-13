@@ -21,15 +21,14 @@ class TestAuthMiddleware:
         assert TIER_LIMITS["pro"] == 10_000
         assert TIER_LIMITS["enterprise"] == 100_000
 
-    def test_tier_restricted_endpoints(self):
+    def test_no_tier_restrictions(self):
+        """All endpoints should be available to all tiers (metered on daily limit only)."""
         from infernis.api.auth import TIER_RESTRICTED
 
-        # /risk/grid requires pro or enterprise
-        assert "pro" in TIER_RESTRICTED["/risk/grid"]
-        assert "enterprise" in TIER_RESTRICTED["/risk/grid"]
-        assert "free" not in TIER_RESTRICTED["/risk/grid"]
+        assert TIER_RESTRICTED == {}
 
-        # /risk/heatmap requires enterprise only
-        assert "enterprise" in TIER_RESTRICTED["/risk/heatmap"]
-        assert "pro" not in TIER_RESTRICTED["/risk/heatmap"]
-        assert "free" not in TIER_RESTRICTED["/risk/heatmap"]
+    def test_demo_paths_public(self):
+        """Demo endpoints should not require auth."""
+        from infernis.api.auth import PUBLIC_PREFIXES
+
+        assert any("/demo" in p for p in PUBLIC_PREFIXES)

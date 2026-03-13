@@ -211,14 +211,30 @@ class TestHeatmapEndpoint:
         assert r.headers["content-type"] == "image/png"
 
 
-class TestHistoryEndpoint:
-    def test_history_returns_empty(self, client):
-        r = client.get("/v1/history/50.0/-122.0")
+class TestDemoEndpoints:
+    def test_demo_risk_returns_all_levels(self, client):
+        r = client.get("/v1/demo/risk")
         assert r.status_code == 200
         data = r.json()
-        assert data["fires"] == []
-        assert data["total_fires"] == 0
+        assert len(data["samples"]) == 6
+        levels = [s["risk"]["level"] for s in data["samples"]]
+        assert "VERY_LOW" in levels
+        assert "EXTREME" in levels
 
-    def test_history_outside_bc(self, client):
-        r = client.get("/v1/history/40.0/-122.0")
-        assert r.status_code == 422
+    def test_demo_risk_by_level(self, client):
+        r = client.get("/v1/demo/risk/high")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["risk"]["level"] == "HIGH"
+        assert data["_demo"] is True
+
+    def test_demo_risk_invalid_level(self, client):
+        r = client.get("/v1/demo/risk/nonexistent")
+        assert r.status_code == 404
+
+    def test_demo_forecast(self, client):
+        r = client.get("/v1/demo/forecast")
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data["forecast"]) == 10
+        assert data["_demo"] is True

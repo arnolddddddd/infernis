@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -32,26 +33,37 @@ def sample_fwi_state(sample_grid):
     return {cid: {"ffmc": 85.0, "dmc": 20.0, "dc": 100.0} for cid in sample_grid["cell_id"]}
 
 
+def _make_test_weather(n_cells, days):
+    """Build test weather dict matching what _get_forecast_weather returns."""
+    result = {}
+    for day in days:
+        result[day] = {
+            "temperature_c": np.full(n_cells, 22.0),
+            "rh_pct": np.full(n_cells, 45.0),
+            "wind_kmh": np.full(n_cells, 12.0),
+            "wind_dir_deg": np.full(n_cells, 225.0),
+            "precip_24h_mm": np.zeros(n_cells),
+            "evapotrans_mm": np.full(n_cells, 2.0),
+            "soil_moisture_1": np.full(n_cells, 0.25),
+            "soil_moisture_2": np.full(n_cells, 0.28),
+            "soil_moisture_3": np.full(n_cells, 0.30),
+            "soil_moisture_4": np.full(n_cells, 0.32),
+        }
+    return result
+
+
 class TestForecastPipeline:
     """Test the forecast pipeline orchestrator."""
 
-    def test_run_with_synthetic_weather(self, sample_grid, sample_fwi_state):
-        """Pipeline should produce forecasts even with synthetic weather."""
+    def test_run_produces_forecasts(self, sample_grid, sample_fwi_state):
+        """Pipeline should produce forecasts for all cells."""
         from infernis.pipelines.forecast_pipeline import ForecastPipeline
 
         pipeline = ForecastPipeline()
-        # Don't load a real model — uses dummy predictions
+        n = len(sample_grid)
+        weather = _make_test_weather(n, list(range(1, 11)))
 
-        with (
-            patch.object(pipeline, "_get_hrdps_weather") as mock_hrdps,
-            patch.object(pipeline, "_get_gdps_weather") as mock_gdps,
-        ):
-            n = len(sample_grid)
-            mock_hrdps.return_value = pipeline._synthetic_weather(sample_grid["lat"].values, [1, 2])
-            mock_gdps.return_value = pipeline._synthetic_weather(
-                sample_grid["lat"].values, list(range(3, 11))
-            )
-
+        with patch.object(pipeline, "_get_forecast_weather", return_value=weather):
             forecasts = pipeline.run(
                 grid_df=sample_grid,
                 current_fwi_state=sample_fwi_state,
@@ -69,16 +81,10 @@ class TestForecastPipeline:
 
         pipeline = ForecastPipeline()
         base = date(2024, 7, 15)
+        n = len(sample_grid)
+        weather = _make_test_weather(n, list(range(1, 11)))
 
-        with (
-            patch.object(pipeline, "_get_hrdps_weather") as mock_h,
-            patch.object(pipeline, "_get_gdps_weather") as mock_g,
-        ):
-            mock_h.return_value = pipeline._synthetic_weather(sample_grid["lat"].values, [1, 2])
-            mock_g.return_value = pipeline._synthetic_weather(
-                sample_grid["lat"].values, list(range(3, 11))
-            )
-
+        with patch.object(pipeline, "_get_forecast_weather", return_value=weather):
             forecasts = pipeline.run(sample_grid, sample_fwi_state, base)
 
         first_cell = list(forecasts.values())[0]
@@ -92,16 +98,10 @@ class TestForecastPipeline:
 
         pipeline = ForecastPipeline()
         pipeline.confidence_decay = 0.95
+        n = len(sample_grid)
+        weather = _make_test_weather(n, list(range(1, 11)))
 
-        with (
-            patch.object(pipeline, "_get_hrdps_weather") as mock_h,
-            patch.object(pipeline, "_get_gdps_weather") as mock_g,
-        ):
-            mock_h.return_value = pipeline._synthetic_weather(sample_grid["lat"].values, [1, 2])
-            mock_g.return_value = pipeline._synthetic_weather(
-                sample_grid["lat"].values, list(range(3, 11))
-            )
-
+        with patch.object(pipeline, "_get_forecast_weather", return_value=weather):
             forecasts = pipeline.run(sample_grid, sample_fwi_state, date(2024, 7, 15))
 
         first_cell = list(forecasts.values())[0]
@@ -114,16 +114,10 @@ class TestForecastPipeline:
         from infernis.pipelines.forecast_pipeline import ForecastPipeline
 
         pipeline = ForecastPipeline()
+        n = len(sample_grid)
+        weather = _make_test_weather(n, list(range(1, 11)))
 
-        with (
-            patch.object(pipeline, "_get_hrdps_weather") as mock_h,
-            patch.object(pipeline, "_get_gdps_weather") as mock_g,
-        ):
-            mock_h.return_value = pipeline._synthetic_weather(sample_grid["lat"].values, [1, 2])
-            mock_g.return_value = pipeline._synthetic_weather(
-                sample_grid["lat"].values, list(range(3, 11))
-            )
-
+        with patch.object(pipeline, "_get_forecast_weather", return_value=weather):
             forecasts = pipeline.run(sample_grid, sample_fwi_state, date(2024, 7, 15))
 
         for cell_days in forecasts.values():
@@ -140,16 +134,10 @@ class TestForecastPipeline:
         from infernis.pipelines.forecast_pipeline import ForecastPipeline
 
         pipeline = ForecastPipeline()
+        n = len(sample_grid)
+        weather = _make_test_weather(n, list(range(1, 11)))
 
-        with (
-            patch.object(pipeline, "_get_hrdps_weather") as mock_h,
-            patch.object(pipeline, "_get_gdps_weather") as mock_g,
-        ):
-            mock_h.return_value = pipeline._synthetic_weather(sample_grid["lat"].values, [1, 2])
-            mock_g.return_value = pipeline._synthetic_weather(
-                sample_grid["lat"].values, list(range(3, 11))
-            )
-
+        with patch.object(pipeline, "_get_forecast_weather", return_value=weather):
             forecasts = pipeline.run(sample_grid, sample_fwi_state, date(2024, 7, 15))
 
         for cell_days in forecasts.values():
@@ -157,26 +145,21 @@ class TestForecastPipeline:
                 assert 1 <= day["danger_level"] <= 6
                 assert day["danger_label"] in [d.value for d in DangerLevel]
 
-    def test_data_source_hrdps_for_days_1_2(self, sample_grid, sample_fwi_state):
+    def test_data_source_labels(self, sample_grid, sample_fwi_state):
+        """Days 1-2 should be GEM, days 3+ should be GEM_GLOBAL."""
         from infernis.pipelines.forecast_pipeline import ForecastPipeline
 
         pipeline = ForecastPipeline()
+        n = len(sample_grid)
+        weather = _make_test_weather(n, list(range(1, 11)))
 
-        with (
-            patch.object(pipeline, "_get_hrdps_weather") as mock_h,
-            patch.object(pipeline, "_get_gdps_weather") as mock_g,
-        ):
-            mock_h.return_value = pipeline._synthetic_weather(sample_grid["lat"].values, [1, 2])
-            mock_g.return_value = pipeline._synthetic_weather(
-                sample_grid["lat"].values, list(range(3, 11))
-            )
-
+        with patch.object(pipeline, "_get_forecast_weather", return_value=weather):
             forecasts = pipeline.run(sample_grid, sample_fwi_state, date(2024, 7, 15))
 
         first_cell = list(forecasts.values())[0]
-        assert first_cell[0]["data_source"] == "HRDPS"  # day 1
-        assert first_cell[1]["data_source"] == "HRDPS"  # day 2
-        assert first_cell[2]["data_source"] == "GDPS"  # day 3
+        assert first_cell[0]["data_source"] == "GEM"  # day 1
+        assert first_cell[1]["data_source"] == "GEM"  # day 2
+        assert first_cell[2]["data_source"] == "GEM_GLOBAL"  # day 3
 
     def test_limited_days(self, sample_grid, sample_fwi_state):
         """Pipeline should respect max_days setting."""
@@ -184,18 +167,27 @@ class TestForecastPipeline:
 
         pipeline = ForecastPipeline()
         pipeline.max_days = 3
+        n = len(sample_grid)
+        weather = _make_test_weather(n, [1, 2, 3])
 
-        with (
-            patch.object(pipeline, "_get_hrdps_weather") as mock_h,
-            patch.object(pipeline, "_get_gdps_weather") as mock_g,
-        ):
-            mock_h.return_value = pipeline._synthetic_weather(sample_grid["lat"].values, [1, 2])
-            mock_g.return_value = pipeline._synthetic_weather(sample_grid["lat"].values, [3])
-
+        with patch.object(pipeline, "_get_forecast_weather", return_value=weather):
             forecasts = pipeline.run(sample_grid, sample_fwi_state, date(2024, 7, 15))
 
         for cell_days in forecasts.values():
             assert len(cell_days) == 3
+
+    def test_empty_weather_returns_no_forecasts(self, sample_grid, sample_fwi_state):
+        """Pipeline should return empty forecasts if weather sources fail."""
+        from infernis.pipelines.forecast_pipeline import ForecastPipeline
+
+        pipeline = ForecastPipeline()
+
+        with patch.object(pipeline, "_get_forecast_weather", return_value={}):
+            forecasts = pipeline.run(sample_grid, sample_fwi_state, date(2024, 7, 15))
+
+        # All cells should have empty forecast lists
+        for cell_days in forecasts.values():
+            assert len(cell_days) == 0
 
 
 class TestForecastSchemas:
