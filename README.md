@@ -60,17 +60,42 @@ Clone this repo, download the raw data with the included scripts, train your own
 
 ## Try the Hosted API
 
-No API key needed for demo endpoints:
+### Demo endpoints (no API key needed)
+
+Build your integration against the demo endpoints first — they mirror the real API with mock data at 6 test locations across BC (one per danger level). Just remove `/demo` from the URL when you switch to a real API key.
+
+| Test Location | Danger Level | Coordinates |
+|---|---|---|
+| Squamish | VERY_LOW | 49.70, -123.16 |
+| Vernon | LOW | 50.27, -119.27 |
+| Kamloops | MODERATE | 50.67, -120.33 |
+| Lytton | HIGH | 50.23, -121.58 |
+| Williams Lake | VERY_HIGH | 52.13, -122.14 |
+| Vanderhoof | EXTREME | 54.02, -124.00 |
 
 ```bash
-# Sample risk data at all 6 danger levels
-curl https://api.infernis.ca/v1/demo/risk | python -m json.tool
+# Point risk — pass any BC coordinates, snaps to nearest test location
+curl https://api.infernis.ca/v1/demo/risk/50.67/-120.33 | python -m json.tool
 
-# Sample 10-day forecast showing a drying event
-curl https://api.infernis.ca/v1/demo/forecast | python -m json.tool
+# 10-day forecast
+curl https://api.infernis.ca/v1/demo/forecast/54.02/-124.00 | python -m json.tool
+
+# FWI components
+curl https://api.infernis.ca/v1/demo/fwi/50.23/-121.58 | python -m json.tool
+
+# Weather conditions
+curl https://api.infernis.ca/v1/demo/conditions/49.70/-123.16 | python -m json.tool
+
+# BEC zone summary
+curl https://api.infernis.ca/v1/demo/risk/zones | python -m json.tool
+
+# All 6 levels at once
+curl https://api.infernis.ca/v1/demo/risk | python -m json.tool
 ```
 
-With a free API key ([sign up at infernis.ca](https://infernis.ca)):
+### Live endpoints (free API key)
+
+[Sign up at infernis.ca](https://infernis.ca) for a free API key (50 requests/day). Same URL structure as demo — just drop `/demo` and add your key:
 
 ```bash
 # Real-time fire risk for Kamloops
@@ -86,24 +111,40 @@ curl -H "X-API-Key: YOUR_KEY" "https://api.infernis.ca/v1/risk/grid?bbox=49.0,-1
 curl -H "X-API-Key: YOUR_KEY" "https://api.infernis.ca/v1/risk/heatmap?bbox=49.0,-120.5,50.5,-119.0" -o heatmap.png
 ```
 
-### Hosted API Endpoints
+### All Endpoints
 
-| Endpoint | Description | Auth |
-|----------|-------------|------|
-| `GET /v1/risk/{lat}/{lon}` | Point fire risk (score, FWI, weather, context) | API Key |
-| `GET /v1/forecast/{lat}/{lon}` | Multi-day forecast (up to 10 days) | API Key |
-| `GET /v1/risk/grid?bbox=s,w,n,e` | Area risk as GeoJSON FeatureCollection | API Key |
-| `GET /v1/risk/heatmap?bbox=s,w,n,e` | Fire risk as PNG image | API Key |
-| `GET /v1/risk/zones` | Risk summary per BEC zone | API Key |
-| `GET /v1/fwi/{lat}/{lon}` | Raw FWI components (FFMC, DMC, DC, ISI, BUI, FWI) | API Key |
-| `GET /v1/conditions/{lat}/{lon}` | Current weather and environment conditions | API Key |
-| `GET /v1/status` | Pipeline health and last run time | Public |
-| `GET /v1/coverage` | Grid metadata and BC boundaries | Public |
-| `GET /v1/demo/risk` | Mock data at all 6 danger levels | Public |
-| `GET /v1/demo/risk/{level}` | Mock data for one danger level | Public |
-| `GET /v1/demo/forecast` | Mock 10-day forecast | Public |
+**Live (API Key required):**
 
-Full documentation with request/response examples: [API Reference](docs/API_REFERENCE.md) | [Swagger UI](https://api.infernis.ca/v1/docs)
+| Endpoint | Description |
+|----------|-------------|
+| `GET /v1/risk/{lat}/{lon}` | Point fire risk (score, FWI, weather, context) |
+| `GET /v1/forecast/{lat}/{lon}` | Multi-day forecast (up to 10 days) |
+| `GET /v1/risk/grid?bbox=s,w,n,e` | Area risk as GeoJSON FeatureCollection |
+| `GET /v1/risk/heatmap?bbox=s,w,n,e` | Fire risk as PNG image |
+| `GET /v1/risk/zones` | Risk summary per BEC zone |
+| `GET /v1/fwi/{lat}/{lon}` | Raw FWI components (FFMC, DMC, DC, ISI, BUI, FWI) |
+| `GET /v1/conditions/{lat}/{lon}` | Current weather and environment conditions |
+
+**Demo (no API key — same response format, mock data):**
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /v1/demo/risk/{lat}/{lon}` | Point risk, snaps to nearest test location |
+| `GET /v1/demo/forecast/{lat}/{lon}` | 10-day forecast for nearest test location |
+| `GET /v1/demo/fwi/{lat}/{lon}` | FWI components for nearest test location |
+| `GET /v1/demo/conditions/{lat}/{lon}` | Weather conditions for nearest test location |
+| `GET /v1/demo/risk/zones` | BEC zone summary |
+| `GET /v1/demo/risk` | All 6 danger levels at once |
+| `GET /v1/demo/risk/{level}` | Single level by name |
+
+**Public (no auth):**
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /v1/status` | Pipeline health and last run time |
+| `GET /v1/coverage` | Grid metadata and BC boundaries |
+
+Full documentation: [API Reference](docs/API_REFERENCE.md) | [Swagger UI](https://api.infernis.ca/v1/docs)
 
 ## Run Your Own Instance
 
