@@ -148,6 +148,8 @@ class DailyPipeline:
 
         # Step 3: Fetch satellite data (NDVI, snow, LAI)
         satellite = self._fetch_satellite(target_date, grid_lats, grid_lons)
+        # Store for forecast pipeline to carry forward (avoids hardcoded defaults)
+        self._last_satellite = satellite
 
         # Step 3b: Fetch lightning data
         lightning = self._fetch_lightning(target_date, grid_lats, grid_lons)

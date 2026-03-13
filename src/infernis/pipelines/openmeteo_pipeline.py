@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date
 
 import numpy as np
 
@@ -32,6 +31,14 @@ DAILY_VARIABLES = [
     "wind_direction_10m_dominant",
     "precipitation_sum",
     "et0_fao_evapotranspiration",
+]
+
+# Hourly variables for soil moisture (aggregated to daily means)
+HOURLY_VARIABLES = [
+    "soil_moisture_0_to_7cm",
+    "soil_moisture_7_to_28cm",
+    "soil_moisture_28_to_100cm",
+    "soil_moisture_100_to_255cm",
 ]
 
 # Max coordinates per batch request (tested: 350 works, 400 hits URI limit)
@@ -84,6 +91,10 @@ class OpenMeteoPipeline:
                 "wind_dir_deg": np.full(n_cells, np.nan),
                 "precip_24h_mm": np.full(n_cells, np.nan),
                 "evapotrans_mm": np.full(n_cells, np.nan),
+                "soil_moisture_1": np.full(n_cells, np.nan),
+                "soil_moisture_2": np.full(n_cells, np.nan),
+                "soil_moisture_3": np.full(n_cells, np.nan),
+                "soil_moisture_4": np.full(n_cells, np.nan),
             }
 
         # Process in batches
@@ -165,6 +176,10 @@ class OpenMeteoPipeline:
                 ("wind_dir_deg", 225.0),
                 ("precip_24h_mm", 0.0),
                 ("evapotrans_mm", 2.0),
+                ("soil_moisture_1", 0.25),
+                ("soil_moisture_2", 0.28),
+                ("soil_moisture_3", 0.30),
+                ("soil_moisture_4", 0.32),
             ]:
                 nan_mask = np.isnan(weather[key])
                 if nan_mask.any():
@@ -206,7 +221,10 @@ class OpenMeteoPipeline:
             "latitude": ",".join(f"{lat:.4f}" for lat in lats),
             "longitude": ",".join(f"{lon:.4f}" for lon in lons),
             "daily": ",".join(DAILY_VARIABLES),
-            "forecast_days": min(forecast_days + 3, 16),  # +3 buffer (day 0 is today, GEM edge days may be None)
+            "hourly": ",".join(HOURLY_VARIABLES),
+            "forecast_days": min(
+                forecast_days + 3, 16
+            ),  # +3 buffer (day 0 is today, GEM edge days may be None)
             "models": "gem_seamless",
             "timezone": "UTC",
         }
@@ -249,6 +267,16 @@ class OpenMeteoPipeline:
             precips = daily.get("precipitation_sum", [])
             ets = daily.get("et0_fao_evapotranspiration", [])
 
+            # Extract hourly soil moisture arrays and compute daily means
+            hourly = location_data.get("hourly", {})
+            sm_layers = [
+                hourly.get("soil_moisture_0_to_7cm", []),
+                hourly.get("soil_moisture_7_to_28cm", []),
+                hourly.get("soil_moisture_28_to_100cm", []),
+                hourly.get("soil_moisture_100_to_255cm", []),
+            ]
+            sm_keys = ["soil_moisture_1", "soil_moisture_2", "soil_moisture_3", "soil_moisture_4"]
+
             for day in range(1, forecast_days + 1):
                 # Index into the daily arrays: day 1 = index 1 (skip today at index 0)
                 idx = day
@@ -264,3 +292,12 @@ class OpenMeteoPipeline:
                     result[day]["precip_24h_mm"][cell_idx] = precips[idx]
                 if idx < len(ets) and ets[idx] is not None:
                     result[day]["evapotrans_mm"][cell_idx] = ets[idx]
+
+                # Aggregate hourly soil moisture to daily mean (24 hours per day)
+                hour_start = day * 24
+                hour_end = hour_start + 24
+                for sm_layer, sm_key in zip(sm_layers, sm_keys):
+                    if hour_end <= len(sm_layer):
+                        day_vals = [v for v in sm_layer[hour_start:hour_end] if v is not None]
+                        if day_vals:
+                            result[day][sm_key][cell_idx] = sum(day_vals) / len(day_vals)

@@ -27,6 +27,10 @@ class ForecastPipeline:
         self._model = None
         self.confidence_decay = settings.forecast_confidence_decay
         self.max_days = settings.forecast_max_days
+        # Observed vegetation state from today's daily pipeline (carried forward)
+        self._observed_ndvi: np.ndarray | None = None
+        self._observed_snow: np.ndarray | None = None
+        self._observed_lai: np.ndarray | None = None
 
     def load_model(self, model_path: str | None = None):
         """Load XGBoost model for forecast inference."""
@@ -179,9 +183,9 @@ class ForecastPipeline:
             logger.info("Forecast weather: GRIB2 fallback — %d days", len(all_weather))
             return all_weather
 
-        # Last resort: synthetic weather
-        logger.error("All forecast weather sources failed — using synthetic fallback")
-        return self._synthetic_weather(grid_lats, days=list(range(1, self.max_days + 1)))
+        # No weather data available — abort rather than produce fake forecasts
+        logger.error("All forecast weather sources failed — skipping forecast (no synthetic data)")
+        return {}
 
     def _get_hrdps_weather_grib2(
         self, target_date: date, grid_lats: np.ndarray, grid_lons: np.ndarray
@@ -217,8 +221,11 @@ class ForecastPipeline:
                     if files:
                         run_dir = files[0].parent
                         return gdps.process_for_grid(
-                            run_dir, grid_lats, grid_lons,
-                            start_day=3, max_day=self.max_days,
+                            run_dir,
+                            grid_lats,
+                            grid_lons,
+                            start_day=3,
+                            max_day=self.max_days,
                         )
                 except Exception as e:
                     logger.warning("GDPS %02dZ GRIB2 failed: %s", run_hour, e)
@@ -226,21 +233,9 @@ class ForecastPipeline:
             logger.warning("GDPS GRIB2 pipeline failed: %s", e)
         return {}
 
-    def _synthetic_weather(
-        self, grid_lats: np.ndarray, days: list[int]
-    ) -> dict[int, dict[str, np.ndarray]]:
-        """Generate synthetic weather fallback."""
-        n = len(grid_lats)
-        result = {}
-        for day in days:
-            result[day] = {
-                "temperature_c": np.full(n, 22.0),
-                "rh_pct": np.full(n, 45.0),
-                "wind_kmh": np.full(n, 12.0),
-                "wind_dir_deg": np.full(n, 225.0),
-                "precip_24h_mm": np.zeros(n),
-            }
-        return result
+    # Synthetic weather removed — forecasts should never use hardcoded fake data.
+    # If both Open-Meteo and GRIB2 fail, the pipeline returns {} and the forecast
+    # is skipped for that day rather than producing misleading predictions.
 
     def _compute_fwi_vectorized(
         self,
@@ -325,10 +320,10 @@ class ForecastPipeline:
                 weather.get("soil_moisture_3", np.full(n_cells, 0.3)),
                 weather.get("soil_moisture_4", np.full(n_cells, 0.3)),
                 weather.get("evapotrans_mm", np.full(n_cells, 2.0)),
-                # Vegetation defaults for forecast (3)
-                np.full(n_cells, 0.5),  # ndvi
-                np.zeros(n_cells),  # snow_cover
-                np.full(n_cells, 2.0),  # lai
+                # Vegetation — use today's observed values if available (3)
+                self._observed_ndvi if self._observed_ndvi is not None else np.full(n_cells, 0.5),
+                self._observed_snow if self._observed_snow is not None else np.zeros(n_cells),
+                self._observed_lai if self._observed_lai is not None else np.full(n_cells, 2.0),
                 # Topography / Infrastructure (5)
                 elevation,
                 slope,

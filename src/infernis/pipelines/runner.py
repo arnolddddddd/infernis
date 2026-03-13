@@ -145,6 +145,14 @@ def _run_forecast_pipeline(
         )
         forecast.load_model(_model_path)
 
+        # Pass today's observed vegetation so forecast doesn't use hardcoded defaults
+        satellite = getattr(daily_pipeline, "_last_satellite", None)
+        if satellite:
+            forecast._observed_ndvi = satellite.get("ndvi")
+            forecast._observed_snow = satellite.get("snow", np.zeros(0)).astype(np.float64)
+            forecast._observed_lai = satellite.get("lai")
+            logger.info("Forecast: using today's observed NDVI/snow/LAI")
+
         forecasts = forecast.run(
             grid_df=grid_df,
             current_fwi_state=daily_pipeline._prev_fwi_state,

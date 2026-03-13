@@ -24,7 +24,14 @@ def _today_pst():
 
 
 # Endpoints that don't require authentication
-PUBLIC_PATHS = {"/health", f"{settings.api_prefix}/status", f"{settings.api_prefix}/coverage"}
+PUBLIC_PATHS = {
+    "/health",
+    f"{settings.api_prefix}/status",
+    f"{settings.api_prefix}/coverage",
+}
+
+# Path prefixes that don't require authentication
+PUBLIC_PREFIXES = (f"{settings.api_prefix}/demo",)
 
 # Tier rate limits (requests/day)
 TIER_LIMITS = {
@@ -46,6 +53,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         # Skip auth for public endpoints, docs, dashboard, landing, and static assets
         if (
             path in PUBLIC_PATHS
+            or path.startswith(PUBLIC_PREFIXES)
             or path == "/"
             or path.startswith("/docs")
             or path.startswith("/openapi")
@@ -75,9 +83,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if not key_record["is_active"]:
             return JSONResponse(status_code=403, content={"detail": "API key has been deactivated"})
 
-        # Check rate limit
+        # Check rate limit (use per-key limit from DB, fall back to tier default)
         tier = key_record["tier"]
-        daily_limit = TIER_LIMITS.get(tier, 50)
+        daily_limit = key_record.get("daily_limit") or TIER_LIMITS.get(tier, 50)
         requests_today = key_record["requests_today"]
 
         # Reset counter if new day

@@ -456,6 +456,303 @@ async def get_risk_heatmap(
     )
 
 
+# ---------------------------------------------------------------------------
+# Demo / test endpoints — return mock data so devs can explore response shapes
+# without an API key.  No rate limit, no auth.
+# ---------------------------------------------------------------------------
+
+_DEMO_SAMPLES = [
+    {
+        "name": "very_low",
+        "location": {"lat": 49.70, "lon": -123.16},
+        "cell_id": "DEMO-VERY-LOW",
+        "risk": {"score": 0.02, "level": "VERY_LOW"},
+        "fwi": {"ffmc": 72.0, "dmc": 8.0, "dc": 15.0, "isi": 0.8, "bui": 8.0, "fwi": 0.5},
+        "conditions": {
+            "temperature_c": 4.0,
+            "rh_pct": 92.0,
+            "wind_kmh": 6.0,
+            "precip_24h_mm": 12.0,
+            "soil_moisture": 0.55,
+            "ndvi": 0.7,
+            "snow_cover": True,
+        },
+        "context": {"bec_zone": "CWH", "fuel_type": "C7", "elevation_m": 120},
+        "description": "Wet coastal forest in winter — minimal fire risk.",
+    },
+    {
+        "name": "low",
+        "location": {"lat": 50.27, "lon": -119.27},
+        "cell_id": "DEMO-LOW",
+        "risk": {"score": 0.08, "level": "LOW"},
+        "fwi": {"ffmc": 80.0, "dmc": 14.0, "dc": 40.0, "isi": 1.5, "bui": 14.0, "fwi": 2.0},
+        "conditions": {
+            "temperature_c": 11.0,
+            "rh_pct": 65.0,
+            "wind_kmh": 10.0,
+            "precip_24h_mm": 2.0,
+            "soil_moisture": 0.40,
+            "ndvi": 0.6,
+            "snow_cover": False,
+        },
+        "context": {"bec_zone": "IDF", "fuel_type": "C3", "elevation_m": 450},
+        "description": "Spring in the Okanagan — drying but still low.",
+    },
+    {
+        "name": "moderate",
+        "location": {"lat": 50.67, "lon": -120.33},
+        "cell_id": "DEMO-MODERATE",
+        "risk": {"score": 0.25, "level": "MODERATE"},
+        "fwi": {"ffmc": 86.0, "dmc": 35.0, "dc": 120.0, "isi": 4.5, "bui": 40.0, "fwi": 12.0},
+        "conditions": {
+            "temperature_c": 22.0,
+            "rh_pct": 38.0,
+            "wind_kmh": 15.0,
+            "precip_24h_mm": 0.0,
+            "soil_moisture": 0.25,
+            "ndvi": 0.5,
+            "snow_cover": False,
+        },
+        "context": {"bec_zone": "IDF", "fuel_type": "C4", "elevation_m": 350},
+        "description": "Hot dry spell in Kamloops — watch closely.",
+    },
+    {
+        "name": "high",
+        "location": {"lat": 50.23, "lon": -121.58},
+        "cell_id": "DEMO-HIGH",
+        "risk": {"score": 0.48, "level": "HIGH"},
+        "fwi": {"ffmc": 90.0, "dmc": 65.0, "dc": 280.0, "isi": 8.0, "bui": 80.0, "fwi": 24.0},
+        "conditions": {
+            "temperature_c": 34.0,
+            "rh_pct": 18.0,
+            "wind_kmh": 22.0,
+            "precip_24h_mm": 0.0,
+            "soil_moisture": 0.12,
+            "ndvi": 0.35,
+            "snow_cover": False,
+        },
+        "context": {"bec_zone": "PP", "fuel_type": "C4", "elevation_m": 230},
+        "description": "Lytton-area heatwave — high danger, fire bans likely.",
+    },
+    {
+        "name": "very_high",
+        "location": {"lat": 52.13, "lon": -122.14},
+        "cell_id": "DEMO-VERY-HIGH",
+        "risk": {"score": 0.72, "level": "VERY_HIGH"},
+        "fwi": {"ffmc": 93.0, "dmc": 90.0, "dc": 400.0, "isi": 14.0, "bui": 120.0, "fwi": 38.0},
+        "conditions": {
+            "temperature_c": 36.0,
+            "rh_pct": 12.0,
+            "wind_kmh": 35.0,
+            "precip_24h_mm": 0.0,
+            "soil_moisture": 0.08,
+            "ndvi": 0.28,
+            "snow_cover": False,
+        },
+        "context": {"bec_zone": "SBS", "fuel_type": "C3", "elevation_m": 680},
+        "description": "Williams Lake area — extreme heat, strong wind, bone-dry fuels.",
+    },
+    {
+        "name": "extreme",
+        "location": {"lat": 54.02, "lon": -124.00},
+        "cell_id": "DEMO-EXTREME",
+        "risk": {"score": 0.91, "level": "EXTREME"},
+        "fwi": {"ffmc": 96.0, "dmc": 120.0, "dc": 500.0, "isi": 22.0, "bui": 160.0, "fwi": 55.0},
+        "conditions": {
+            "temperature_c": 38.0,
+            "rh_pct": 8.0,
+            "wind_kmh": 45.0,
+            "precip_24h_mm": 0.0,
+            "soil_moisture": 0.05,
+            "ndvi": 0.20,
+            "snow_cover": False,
+        },
+        "context": {"bec_zone": "ICH", "fuel_type": "M2", "elevation_m": 700},
+        "description": "Worst-case scenario — evacuate. Lightning-ignition imminent.",
+    },
+]
+
+
+@router.get("/demo/risk")
+async def get_demo_risk():
+    """Sample risk responses at all six danger levels. No API key required.
+
+    Returns mock data for developer testing and integration — not real predictions.
+    """
+    return {
+        "description": "Sample INFERNIS risk data at all six danger levels. "
+        "Use these to test your integration. This is mock data, not live predictions.",
+        "danger_levels": ["VERY_LOW", "LOW", "MODERATE", "HIGH", "VERY_HIGH", "EXTREME"],
+        "samples": [
+            {
+                "location": s["location"],
+                "grid_cell_id": s["cell_id"],
+                "timestamp": "2026-07-15T14:00:00-07:00",
+                "risk": {
+                    "score": s["risk"]["score"],
+                    "level": s["risk"]["level"],
+                    "color": DangerLevel.from_score(s["risk"]["score"]).color,
+                },
+                "fwi": s["fwi"],
+                "conditions": s["conditions"],
+                "context": s["context"],
+                "forecast_horizon": "24h",
+                "next_update": "2026-07-16T14:00:00-07:00",
+                "_demo": True,
+                "_description": s["description"],
+            }
+            for s in _DEMO_SAMPLES
+        ],
+    }
+
+
+@router.get("/demo/risk/{level}")
+async def get_demo_risk_by_level(level: str):
+    """Single sample risk response for a specific danger level. No API key required.
+
+    Valid levels: very_low, low, moderate, high, very_high, extreme
+    """
+    sample = next((s for s in _DEMO_SAMPLES if s["name"] == level.lower()), None)
+    if sample is None:
+        valid = [s["name"] for s in _DEMO_SAMPLES]
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown level '{level}'. Valid levels: {', '.join(valid)}",
+        )
+    s = sample
+    return {
+        "location": s["location"],
+        "grid_cell_id": s["cell_id"],
+        "timestamp": "2026-07-15T14:00:00-07:00",
+        "risk": {
+            "score": s["risk"]["score"],
+            "level": s["risk"]["level"],
+            "color": DangerLevel.from_score(s["risk"]["score"]).color,
+        },
+        "fwi": s["fwi"],
+        "conditions": s["conditions"],
+        "context": s["context"],
+        "forecast_horizon": "24h",
+        "next_update": "2026-07-16T14:00:00-07:00",
+        "_demo": True,
+        "_description": s["description"],
+    }
+
+
+@router.get("/demo/forecast")
+async def get_demo_forecast():
+    """Sample 10-day forecast showing risk escalation. No API key required."""
+    from datetime import date, timedelta
+
+    base = date(2026, 7, 15)
+    # Simulate a drying trend with increasing risk
+    day_profiles = [
+        {
+            "score": 0.08,
+            "dl": 2,
+            "label": "LOW",
+            "conf": 0.95,
+            "src": "HRDPS",
+            "fwi": {"ffmc": 82.0, "dmc": 20.0, "dc": 80.0, "isi": 2.5, "bui": 22.0, "fwi": 4.0},
+        },
+        {
+            "score": 0.14,
+            "dl": 2,
+            "label": "LOW",
+            "conf": 0.90,
+            "src": "HRDPS",
+            "fwi": {"ffmc": 85.0, "dmc": 28.0, "dc": 95.0, "isi": 3.8, "bui": 30.0, "fwi": 8.0},
+        },
+        {
+            "score": 0.22,
+            "dl": 3,
+            "label": "MODERATE",
+            "conf": 0.86,
+            "src": "GDPS",
+            "fwi": {"ffmc": 87.0, "dmc": 38.0, "dc": 115.0, "isi": 5.0, "bui": 42.0, "fwi": 13.0},
+        },
+        {
+            "score": 0.31,
+            "dl": 3,
+            "label": "MODERATE",
+            "conf": 0.81,
+            "src": "GDPS",
+            "fwi": {"ffmc": 88.5, "dmc": 48.0, "dc": 140.0, "isi": 6.2, "bui": 55.0, "fwi": 17.0},
+        },
+        {
+            "score": 0.42,
+            "dl": 4,
+            "label": "HIGH",
+            "conf": 0.77,
+            "src": "GDPS",
+            "fwi": {"ffmc": 90.0, "dmc": 58.0, "dc": 170.0, "isi": 7.5, "bui": 68.0, "fwi": 22.0},
+        },
+        {
+            "score": 0.55,
+            "dl": 4,
+            "label": "HIGH",
+            "conf": 0.74,
+            "src": "GDPS",
+            "fwi": {"ffmc": 91.0, "dmc": 65.0, "dc": 200.0, "isi": 8.8, "bui": 78.0, "fwi": 26.0},
+        },
+        {
+            "score": 0.62,
+            "dl": 5,
+            "label": "VERY_HIGH",
+            "conf": 0.70,
+            "src": "GDPS",
+            "fwi": {"ffmc": 92.0, "dmc": 72.0, "dc": 235.0, "isi": 10.5, "bui": 88.0, "fwi": 31.0},
+        },
+        {
+            "score": 0.58,
+            "dl": 4,
+            "label": "HIGH",
+            "conf": 0.66,
+            "src": "GDPS",
+            "fwi": {"ffmc": 89.0, "dmc": 70.0, "dc": 250.0, "isi": 7.0, "bui": 85.0, "fwi": 24.0},
+        },
+        {
+            "score": 0.45,
+            "dl": 4,
+            "label": "HIGH",
+            "conf": 0.63,
+            "src": "GDPS",
+            "fwi": {"ffmc": 86.0, "dmc": 62.0, "dc": 240.0, "isi": 5.5, "bui": 72.0, "fwi": 18.0},
+        },
+        {
+            "score": 0.30,
+            "dl": 3,
+            "label": "MODERATE",
+            "conf": 0.60,
+            "src": "GDPS",
+            "fwi": {"ffmc": 82.0, "dmc": 55.0, "dc": 225.0, "isi": 3.5, "bui": 60.0, "fwi": 12.0},
+        },
+    ]
+    return {
+        "latitude": 50.67,
+        "longitude": -120.33,
+        "cell_id": "DEMO-FORECAST",
+        "base_date": str(base),
+        "forecast": [
+            {
+                "valid_date": str(base + timedelta(days=i + 1)),
+                "lead_day": i + 1,
+                "risk_score": dp["score"],
+                "danger_level": dp["dl"],
+                "danger_label": dp["label"],
+                "confidence": dp["conf"],
+                "fwi": dp["fwi"],
+                "data_source": dp["src"],
+            }
+            for i, dp in enumerate(day_profiles)
+        ],
+        "generated_at": "2026-07-15T14:00:00-07:00",
+        "_demo": True,
+        "_description": "Simulated 10-day drying event near Kamloops. "
+        "Risk ramps from LOW to VERY_HIGH (day 7), then eases as a front moves in.",
+    }
+
+
 def _score_to_rgba(scores, colormap: str = "risk"):
     """Convert a 2D array of fire risk scores [0,1] to RGBA uint8 array."""
     import numpy as np
