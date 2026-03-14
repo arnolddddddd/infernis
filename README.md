@@ -301,6 +301,16 @@ AUC-ROC: 0.90–0.93 | Avg Precision: 0.43–0.59 | Brier: 0.04–0.08
 
 6. **Forecast Engine** — Up to 10-day risk forecasts using ECCC's GEM model (HRDPS 2.5 km for days 1–2, GDPS for days 3–10) with FWI roll-forward and 0.95/day confidence decay.
 
+## Built with INFERNIS
+
+Projects built by the community using the INFERNIS API:
+
+| Project | Description | Link |
+|---------|-------------|------|
+| **Fire Forecast BC** | Interactive wildfire risk map for British Columbia. Search any BC address, see today's risk score and 10-day forecast, view active fire incidents — all powered by the INFERNIS API. | [fireforecastbc.ca/live](https://fireforecastbc.ca/live) |
+
+Built something with INFERNIS? [Open a PR](https://github.com/argonBIsystems/infernis/pulls) to add it here.
+
 ## Project Structure
 
 ```
