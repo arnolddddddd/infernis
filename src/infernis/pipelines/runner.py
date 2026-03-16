@@ -249,22 +249,45 @@ def _save_forecasts_to_db(forecasts: dict[str, list[dict]], base_date: date):
 
 
 def _check_alerts(predictions: dict):
-    """Check all active alerts and fire webhooks for threshold exceedances."""
+    """Check all active alerts and fire webhooks for threshold exceedances.
+
+    Guards:
+    - Skips alerts whose API key is inactive
+    - Skips alerts that were already triggered within the cooldown period (default 24h)
+    - Tracks consecutive delivery failures; auto-disables after 5
+    """
+    MAX_CONSECUTIVE_FAILURES = 5
+
     try:
         import httpx
 
+        from infernis.config import settings
         from infernis.db.engine import SessionLocal
-        from infernis.db.tables import AlertDB
+        from infernis.db.tables import AlertDB, APIKeyDB
         from infernis.models.enums import DangerLevel
+
+        cooldown = timedelta(hours=settings.alert_cooldown_hours)
 
         db = SessionLocal()
         try:
-            alerts = db.query(AlertDB).filter(AlertDB.is_active == True).all()  # noqa: E712
+            # Join with api_keys to skip alerts for inactive keys
+            alerts = (
+                db.query(AlertDB)
+                .join(APIKeyDB, AlertDB.api_key_id == APIKeyDB.id)
+                .filter(
+                    AlertDB.is_active == True,  # noqa: E712
+                    APIKeyDB.is_active == True,  # noqa: E712
+                )
+                .all()
+            )
             if not alerts:
                 return
 
+            now = datetime.now(timezone.utc)
             triggered = 0
             failed = 0
+            skipped_cooldown = 0
+            auto_disabled = 0
 
             for alert in alerts:
                 pred = predictions.get(alert.cell_id)
@@ -274,6 +297,15 @@ def _check_alerts(predictions: dict):
                 score = pred.get("score", 0.0)
                 if score < alert.threshold:
                     continue
+
+                # Cooldown: skip if already fired recently
+                if alert.last_triggered:
+                    last = alert.last_triggered
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+                    if now - last < cooldown:
+                        skipped_cooldown += 1
+                        continue
 
                 # Threshold exceeded — fire the webhook
                 level = DangerLevel.from_score(score)
@@ -290,9 +322,10 @@ def _check_alerts(predictions: dict):
                     },
                     "fwi": pred.get("fwi", 0.0),
                     "temperature_c": pred.get("temperature_c", 0.0),
-                    "triggered_at": datetime.now(timezone.utc).isoformat(),
+                    "triggered_at": now.isoformat(),
                 }
 
+                delivery_ok = False
                 try:
                     resp = httpx.post(
                         alert.webhook_url,
@@ -303,6 +336,14 @@ def _check_alerts(predictions: dict):
                             "User-Agent": "INFERNIS-Alerts/1.0",
                         },
                     )
+                    if 200 <= resp.status_code < 300:
+                        delivery_ok = True
+                    else:
+                        logger.warning(
+                            "Alert %d webhook returned HTTP %d",
+                            alert.id,
+                            resp.status_code,
+                        )
                     logger.info(
                         "Alert %d fired: cell=%s score=%.3f → %s (HTTP %d)",
                         alert.id,
@@ -311,19 +352,41 @@ def _check_alerts(predictions: dict):
                         alert.webhook_url[:50],
                         resp.status_code,
                     )
-                    alert.last_triggered = datetime.now(timezone.utc)
-                    triggered += 1
                 except Exception as e:
                     logger.warning("Alert %d webhook failed: %s", alert.id, e)
+
+                if delivery_ok:
+                    alert.last_triggered = now
+                    alert.consecutive_failures = 0
+                    triggered += 1
+                else:
+                    alert.consecutive_failures = (alert.consecutive_failures or 0) + 1
                     failed += 1
+
+                    if alert.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                        alert.is_active = False
+                        alert.disabled_reason = (
+                            f"Auto-disabled after {MAX_CONSECUTIVE_FAILURES} "
+                            f"consecutive webhook failures"
+                        )
+                        auto_disabled += 1
+                        logger.warning(
+                            "Alert %d auto-disabled after %d consecutive failures: %s",
+                            alert.id,
+                            MAX_CONSECUTIVE_FAILURES,
+                            alert.webhook_url[:50],
+                        )
 
             db.commit()
 
-            if triggered or failed:
+            if triggered or failed or skipped_cooldown:
                 logger.info(
-                    "Alerts: %d triggered, %d failed out of %d active",
+                    "Alerts: %d triggered, %d failed, %d cooldown-skipped, "
+                    "%d auto-disabled out of %d active",
                     triggered,
                     failed,
+                    skipped_cooldown,
+                    auto_disabled,
                     len(alerts),
                 )
 
@@ -502,6 +565,7 @@ def cleanup_old_data(
 ):
     """Delete predictions and pipeline_runs older than retention period.
 
+    Also disables stale alerts (never triggered within alert_stale_days).
     Safe to call at any time — failures are logged but never raised.
     """
     from infernis.config import settings
@@ -511,7 +575,7 @@ def cleanup_old_data(
 
     try:
         from infernis.db.engine import SessionLocal
-        from infernis.db.tables import PipelineRunDB, PredictionDB
+        from infernis.db.tables import AlertDB, PipelineRunDB, PredictionDB
 
         db = SessionLocal()
         try:
@@ -541,9 +605,32 @@ def cleanup_old_data(
                     run_days,
                 )
 
+            # Disable stale alerts (active but never triggered within stale_days)
+            stale_cutoff = datetime.now(timezone.utc) - timedelta(days=settings.alert_stale_days)
+            stale_alerts = (
+                db.query(AlertDB)
+                .filter(
+                    AlertDB.is_active == True,  # noqa: E712
+                    (AlertDB.last_triggered == None) | (AlertDB.last_triggered < stale_cutoff),  # noqa: E711
+                    AlertDB.created_at < stale_cutoff,
+                )
+                .all()
+            )
+            if stale_alerts:
+                for alert in stale_alerts:
+                    alert.is_active = False
+                    alert.disabled_reason = (
+                        f"Auto-disabled: no successful delivery in {settings.alert_stale_days} days"
+                    )
+                logger.info(
+                    "Cleanup: disabled %d stale alerts (no activity in %d days)",
+                    len(stale_alerts),
+                    settings.alert_stale_days,
+                )
+
             db.commit()
 
-            if not pred_deleted and not runs_deleted:
+            if not pred_deleted and not runs_deleted and not stale_alerts:
                 logger.info("Cleanup: nothing to prune")
         finally:
             db.close()

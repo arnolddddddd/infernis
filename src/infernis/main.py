@@ -189,14 +189,14 @@ cells across BC. Updated daily at 2 PM Pacific.
 
 **Getting started:**
 1. Hit any `/v1/demo/` endpoint — no API key needed, same response format as live API
-2. Sign up at [infernis.ca](https://infernis.ca) for a free API key (50 requests/day)
+2. Sign up at [infernis.ca](https://infernis.ca) for a free API key
 3. Use the same URL structure as demo — just drop `/demo` and add your `X-API-Key` header
 
 **Base URL:** `https://api.infernis.ca/v1`
 
-**Authentication:** `X-API-Key` header on all non-demo endpoints.
+**Authentication:** `X-API-Key` header on all non-demo endpoints. All endpoints available to all keys.
 
-**Rate limits:** Free tier 50 req/day. Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
+**Rate limits:** Daily request limit per key. Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
 """,
     openapi_tags=[
         {"name": "risk", "description": "Point and area fire risk queries — the core API"},

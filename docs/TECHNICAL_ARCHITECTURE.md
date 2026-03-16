@@ -625,7 +625,7 @@ CREATE TABLE api_keys (
     id              SERIAL PRIMARY KEY,
     key_hash        VARCHAR(128) NOT NULL UNIQUE,  -- SHA-256 hash of the API key
     name            VARCHAR(100) NOT NULL,          -- human-readable key name
-    tier            VARCHAR(20) NOT NULL DEFAULT 'free',  -- 'free', 'pro', 'enterprise'
+    tier            VARCHAR(20) NOT NULL DEFAULT 'free',  -- kept for compatibility; single tier
     daily_limit     INTEGER NOT NULL DEFAULT 50,
     requests_today  INTEGER NOT NULL DEFAULT 0,
     last_request_at TIMESTAMPTZ,
@@ -650,7 +650,7 @@ CREATE TABLE users (
     email               VARCHAR(255) NOT NULL,
     display_name        VARCHAR(200),
     api_key_id          INTEGER REFERENCES api_keys(id) ON DELETE SET NULL,
-    tier                VARCHAR(20) NOT NULL DEFAULT 'free',
+    tier                VARCHAR(20) NOT NULL DEFAULT 'free',  -- kept for compatibility; single tier
     billing_cycle_start DATE NOT NULL,                  -- advances every 30 days
     created_at          TIMESTAMPTZ DEFAULT NOW(),
     is_active           BOOLEAN DEFAULT TRUE
@@ -785,13 +785,13 @@ API keys are prefixed with `ifn_live_` (production) or `ifn_test_` (development)
 
 ### Rate Limiting
 
-Rate limits are enforced per API key based on daily request count. All endpoints are available to all users — there are no feature restrictions. One tier: **Free** (50 requests/day). Contact `hello@argonbi.com` for increased limits.
+Rate limits are enforced per API key based on the `daily_limit` column in the database. All endpoints are available to all users — there are no feature restrictions or tiers. New keys receive the default limit from the `INFERNIS_DAILY_RATE_LIMIT` environment variable. Custom limits can be set per-key directly in the database.
 
 Rate limit state is tracked in the `api_keys.requests_today` column, reset daily at midnight PST. The middleware reads `daily_limit` from the database per-key, so individual keys can be upgraded without code changes. Rate limit headers are included in all responses:
 
 ```
-X-RateLimit-Limit: 50
-X-RateLimit-Remaining: 47
+X-RateLimit-Limit: <daily_limit>
+X-RateLimit-Remaining: <remaining>
 X-RateLimit-Reset: midnight PST
 ```
 
@@ -1440,7 +1440,7 @@ User                Browser              FastAPI               Firebase Admin SD
  |                    |                     |  Store SHA-256 hash    |
  |                    |                     |                        |
  |                    |  {api_key: "abc..", |                        |
- |                    |   tier: "free"}     |                        |
+ |                    |   daily_limit: N}   |                        |
  |                    | <------------------ |                        |
  |                    |                     |                        |
  |  Dashboard shows   |                     |                        |
@@ -1454,8 +1454,8 @@ The plaintext API key is returned **only** at registration and key regeneration.
 
 | Endpoint | Method | Auth | Purpose |
 |----------|--------|------|---------|
-| `/api/dashboard/register` | POST | Firebase Bearer | Idempotent. First call: creates user + free API key, returns plaintext key. Subsequent: returns profile. |
-| `/api/dashboard/profile` | GET | Firebase Bearer | User profile with masked key preview, tier, billing cycle. |
+| `/api/dashboard/register` | POST | Firebase Bearer | Idempotent. First call: creates user + API key with default daily limit, returns plaintext key. Subsequent: returns profile. |
+| `/api/dashboard/profile` | GET | Firebase Bearer | User profile with masked key preview, daily limit, billing cycle. |
 | `/api/dashboard/usage` | GET | Firebase Bearer | Requests today, daily limit, cycle dates, days remaining. |
 | `/api/dashboard/key/regenerate` | POST | Firebase Bearer | Deactivates old key, creates new one, returns plaintext (one-time). |
 

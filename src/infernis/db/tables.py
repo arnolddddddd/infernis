@@ -147,5 +147,7 @@ class AlertDB(Base):
     threshold = Column(Float, nullable=False)
     webhook_url = Column(String(500), nullable=False)
     is_active = Column(Boolean, default=True)
+    consecutive_failures = Column(Integer, default=0, nullable=False)
+    disabled_reason = Column(String(100), nullable=True)
     last_triggered = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

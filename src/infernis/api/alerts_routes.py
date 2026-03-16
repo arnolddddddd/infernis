@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from infernis.config import settings
 
@@ -14,11 +16,48 @@ logger = logging.getLogger(__name__)
 alerts_router = APIRouter(prefix=settings.api_prefix, tags=["alerts"])
 
 
+def _validate_webhook_url(url: str) -> str:
+    """Validate that a webhook URL is HTTPS and not targeting private/internal networks."""
+    parsed = urlparse(url)
+
+    if parsed.scheme != "https":
+        raise ValueError("Webhook URL must use HTTPS")
+
+    hostname = parsed.hostname or ""
+
+    # Block obvious internal/private hostnames
+    if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1", ""):
+        raise ValueError("Webhook URL must not target localhost")
+
+    # Block private IP ranges
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_loopback or addr.is_link_local:
+            raise ValueError("Webhook URL must not target private or internal IPs")
+    except ValueError as e:
+        if "must not target" in str(e):
+            raise
+        # hostname is a domain name, not an IP — that's fine
+
+    # Block common internal TLDs
+    if hostname.endswith((".local", ".internal", ".corp", ".lan")):
+        raise ValueError("Webhook URL must not target internal domains")
+
+    return url
+
+
 class AlertCreate(BaseModel):
     latitude: float
     longitude: float
     threshold: float = Field(..., ge=0.0, le=1.0, description="Risk score threshold (0-1)")
-    webhook_url: str = Field(..., max_length=500, description="URL to POST when threshold exceeded")
+    webhook_url: str = Field(
+        ..., max_length=500, description="HTTPS URL to POST when threshold exceeded"
+    )
+
+    @field_validator("webhook_url")
+    @classmethod
+    def check_webhook_url(cls, v: str) -> str:
+        return _validate_webhook_url(v)
 
 
 @alerts_router.post("/alerts", status_code=201)
@@ -57,6 +96,39 @@ async def create_alert(alert: AlertCreate, request: Request):
 
         db = SessionLocal()
         try:
+            # Check per-key alert limit
+            existing_count = (
+                db.query(AlertDB)
+                .filter(AlertDB.api_key_id == api_key_id, AlertDB.is_active == True)  # noqa: E712
+                .count()
+            )
+            max_alerts = settings.alert_max_per_key
+            if existing_count >= max_alerts:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Alert limit reached ({max_alerts}). "
+                    f"Delete unused alerts first.",
+                )
+
+            # Check for duplicate (same cell + threshold + webhook)
+            duplicate = (
+                db.query(AlertDB)
+                .filter(
+                    AlertDB.api_key_id == api_key_id,
+                    AlertDB.cell_id == cell_id,
+                    AlertDB.threshold == alert.threshold,
+                    AlertDB.webhook_url == alert.webhook_url,
+                    AlertDB.is_active == True,  # noqa: E712
+                )
+                .first()
+            )
+            if duplicate:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Duplicate alert already exists (id={duplicate.id}) "
+                    f"for this cell, threshold, and webhook URL.",
+                )
+
             record = AlertDB(
                 api_key_id=api_key_id,
                 latitude=alert.latitude,
@@ -78,6 +150,8 @@ async def create_alert(alert: AlertCreate, request: Request):
             }
         finally:
             db.close()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Failed to create alert: %s", e)
         raise HTTPException(status_code=500, detail="Failed to create alert")
@@ -115,6 +189,7 @@ async def list_alerts(request: Request):
                         "longitude": a.longitude,
                         "threshold": a.threshold,
                         "webhook_url": a.webhook_url,
+                        "consecutive_failures": a.consecutive_failures or 0,
                         "last_triggered": a.last_triggered.isoformat()
                         if a.last_triggered
                         else None,

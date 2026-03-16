@@ -83,6 +83,14 @@ class Settings(BaseSettings):
     hrdps_data_dir: str = Field(default="data/raw/hrdps", alias="INFERNIS_HRDPS_DATA_DIR")
     gdps_data_dir: str = Field(default="data/raw/gdps", alias="INFERNIS_GDPS_DATA_DIR")
 
+    # Alerts
+    alert_max_per_key: int = Field(default=10, alias="INFERNIS_ALERT_MAX_PER_KEY")
+    alert_cooldown_hours: int = Field(default=24, alias="INFERNIS_ALERT_COOLDOWN_HOURS")
+    alert_stale_days: int = Field(default=90, alias="INFERNIS_ALERT_STALE_DAYS")
+
+    # Rate limit (requests/day) — single tier, all endpoints available
+    daily_rate_limit: int = Field(default=50, alias="INFERNIS_DAILY_RATE_LIMIT")
+
     # API
     api_prefix: str = "/v1"
 

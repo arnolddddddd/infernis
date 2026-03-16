@@ -33,15 +33,6 @@ PUBLIC_PATHS = {
 # Path prefixes that don't require authentication
 PUBLIC_PREFIXES = (f"{settings.api_prefix}/demo", f"{settings.api_prefix}/tiles")
 
-# Tier rate limits (requests/day)
-TIER_LIMITS = {
-    "free": 50,
-    "pro": 10_000,
-    "enterprise": 100_000,
-}
-
-# No endpoint restrictions — all endpoints available to all tiers, metered on daily limit
-TIER_RESTRICTED = {}
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
@@ -83,9 +74,8 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if not key_record["is_active"]:
             return JSONResponse(status_code=403, content={"detail": "API key has been deactivated"})
 
-        # Check rate limit (use per-key limit from DB, fall back to tier default)
-        tier = key_record["tier"]
-        daily_limit = key_record.get("daily_limit") or TIER_LIMITS.get(tier, 50)
+        # Check rate limit (per-key limit from DB is authoritative)
+        daily_limit = key_record["daily_limit"]
         requests_today = key_record["requests_today"]
 
         # Reset counter if new day
@@ -102,18 +92,6 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                     "X-RateLimit-Reset": "midnight PST",
                 },
             )
-
-        # Check tier-based endpoint access
-        api_path = path.removeprefix(settings.api_prefix)
-        for restricted_path, allowed_tiers in TIER_RESTRICTED.items():
-            if api_path.startswith(restricted_path) and tier not in allowed_tiers:
-                return JSONResponse(
-                    status_code=403,
-                    content={
-                        "detail": f"Endpoint requires {' or '.join(sorted(allowed_tiers))} tier. "
-                        f"Your tier: {tier}. Upgrade at https://infernis.ca",
-                    },
-                )
 
         # Process request
         response = await call_next(request)
@@ -143,7 +121,6 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                     return None
                 return {
                     "id": record.id,
-                    "tier": record.tier,
                     "daily_limit": record.daily_limit,
                     "requests_today": record.requests_today,
                     "last_reset": record.last_reset,
@@ -156,8 +133,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             # Fail open in case DB is unavailable - allow request
             return {
                 "id": 0,
-                "tier": "free",
-                "daily_limit": 50,
+                "daily_limit": settings.daily_rate_limit,
                 "requests_today": 0,
                 "last_reset": _today_pst(),
                 "is_active": True,

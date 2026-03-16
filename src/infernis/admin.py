@@ -26,15 +26,17 @@ def create_key(args):
     raw_key = secrets.token_hex(32)
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
 
-    tier_limits = {"free": 50, "pro": 10_000, "enterprise": 100_000}
+    from infernis.config import settings
+
+    daily_limit = args.limit if args.limit else settings.daily_rate_limit
 
     db = SessionLocal()
     try:
         record = APIKeyDB(
             key_hash=key_hash,
             name=args.name,
-            tier=args.tier,
-            daily_limit=tier_limits.get(args.tier, 50),
+            tier="free",
+            daily_limit=daily_limit,
             is_active=True,
         )
         db.add(record)
@@ -112,7 +114,10 @@ def main():
     # create_key
     p_key = sub.add_parser("create_key", help="Create a new API key")
     p_key.add_argument("--name", required=True, help="Key name/description")
-    p_key.add_argument("--tier", choices=["free", "pro", "enterprise"], default="free")
+    p_key.add_argument(
+        "--limit", type=int, default=0,
+        help="Custom daily request limit (default: from INFERNIS_DAILY_RATE_LIMIT)",
+    )
 
     # list_keys
     sub.add_parser("list_keys", help="List all API keys")

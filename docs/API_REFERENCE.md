@@ -24,17 +24,13 @@ X-API-Key: your_api_key_here
 
 ### Obtaining an API Key
 
-API keys are provisioned automatically through the INFERNIS dashboard at `https://api.infernis.ca/static/index.html`. Sign up with email/password or Google, and a free-tier API key is generated immediately. The plaintext key is shown once at signup — copy it and store it securely. You can view a masked preview and regenerate your key from the dashboard at any time.
+API keys are provisioned automatically through the INFERNIS dashboard at `https://api.infernis.ca/static/index.html`. Sign up with email/password or Google, and an API key is generated immediately. The plaintext key is shown once at signup — copy it and store it securely. You can view a masked preview and regenerate your key from the dashboard at any time.
 
-### Rate Limit Tiers
+### Rate Limits
 
-| Tier       | Requests per Day | Grid/Heatmap Access | Support            |
-|------------|------------------|---------------------|--------------------|
-| Free       | 50               | No                  | GitHub Issues      |
-| Pro        | 10,000           | Grid access         | Email (48h SLA)    |
-| Enterprise | 100,000          | Grid + Heatmap      | Dedicated (4h SLA) |
+All API keys have access to every endpoint. Each key has a configurable daily request limit. The default limit is set by the `INFERNIS_DAILY_RATE_LIMIT` environment variable and can be customized per key in the database.
 
-Enterprise customers may also request custom SLAs, dedicated endpoints, and webhook integrations. Contact `hello@argonbi.com` for details.
+Contact `hello@argonbi.com` for custom rate limits, dedicated endpoints, or webhook integrations.
 
 ---
 
@@ -43,8 +39,6 @@ Enterprise customers may also request custom SLAs, dedicated endpoints, and webh
 ### GET /v1/risk/{lat}/{lon}
 
 **Point risk query.** Returns the fire risk score and all supporting data for the nearest grid cell to the specified coordinates. This is the primary endpoint for single-location risk assessment.
-
-**Tier:** Free, Pro, Enterprise
 
 #### Path Parameters
 
@@ -117,8 +111,6 @@ Returns the complete risk assessment for the nearest grid cell.
 
 **Area risk query.** Returns a GeoJSON FeatureCollection containing risk scores for all grid cells within the specified bounding box. Each Feature includes the same risk data as the point query endpoint.
 
-**Tier:** Pro, Enterprise
-
 #### Query Parameters
 
 | Parameter    | Type   | Required | Default | Description                                                                                   |
@@ -172,8 +164,7 @@ Returns a GeoJSON FeatureCollection. Each Feature represents a single grid cell.
 | Status | Description                                                                    |
 |--------|--------------------------------------------------------------------------------|
 | 400    | Malformed bounding box. Must be four comma-separated decimal values.           |
-| 403    | Tier does not have access to this endpoint. Upgrade to Pro or Enterprise.      |
-| 422    | Bounding box is outside BC boundaries or exceeds maximum area for your tier.   |
+| 422    | Bounding box is outside BC boundaries or exceeds maximum area.                 |
 | 429    | Rate limit exceeded.                                                           |
 | 503    | Service temporarily unavailable.                                               |
 
@@ -182,8 +173,6 @@ Returns a GeoJSON FeatureCollection. Each Feature represents a single grid cell.
 ### GET /v1/risk/heatmap
 
 **Visual risk heatmap.** Returns a rendered PNG image of fire risk for the specified bounding box. Useful for embedding risk maps in dashboards or GIS applications.
-
-**Tier:** Enterprise
 
 #### Query Parameters
 
@@ -211,7 +200,7 @@ X-Timestamp: 2026-07-15T21:00:00+00:00
 | Status | Description                                                               |
 |--------|---------------------------------------------------------------------------|
 | 400    | Malformed bounding box or invalid format parameter.                       |
-| 403    | Tier does not have access to this endpoint.                               |
+| 403    | Forbidden. API key is not authorized for this request.                    |
 | 422    | Bounding box is outside BC boundaries.                                    |
 | 429    | Rate limit exceeded.                                                      |
 | 503    | Service temporarily unavailable.                                          |
@@ -221,8 +210,6 @@ X-Timestamp: 2026-07-15T21:00:00+00:00
 ### GET /v1/risk/zones
 
 **Zone-level risk summary.** Returns aggregate fire risk information for all BC biogeoclimatic (BEC) zones. Each zone includes its average and maximum risk score, danger level, cell count, and number of high-risk cells.
-
-**Tier:** Free, Pro, Enterprise
 
 #### Query Parameters
 
@@ -260,8 +247,6 @@ None.
 
 **Raw FWI components.** Returns the Canadian Forest Fire Weather Index System components for the specified location without the INFERNIS risk model overlay. Useful when you need the underlying fire weather data independent of the ML predictions.
 
-**Tier:** Free, Pro, Enterprise
-
 #### Path Parameters
 
 | Parameter | Type  | Required | Description                                      |
@@ -295,8 +280,6 @@ None.
 ### GET /v1/conditions/{lat}/{lon}
 
 **Current conditions.** Returns the latest weather observations and environmental data for the specified location. This includes the inputs used by the INFERNIS prediction models.
-
-**Tier:** Free, Pro, Enterprise
 
 #### Path Parameters
 
@@ -332,8 +315,6 @@ None.
 ### GET /v1/forecast/{lat}/{lon}
 
 **Multi-day fire risk forecast.** Returns up to 10 days of forecast fire risk trajectories for the nearest grid cell. Days 1--2 use high-resolution HRDPS weather forecasts (2.5km); days 3--10 use GDPS global forecasts (15km). FWI moisture codes are rolled forward day-by-day using forecast weather. A confidence decay factor (0.95 per lead day) attenuates predictions at longer lead times to reflect increasing forecast uncertainty.
-
-**Tier:** Free, Pro, Enterprise
 
 #### Path Parameters
 
@@ -405,8 +386,6 @@ None.
 
 **Historical fire events.** Returns a list of past fire events near the specified location, drawn from the BC Wildfire Service historical database and satellite-detected hotspot archives.
 
-**Tier:** Free, Pro, Enterprise
-
 #### Path Parameters
 
 | Parameter | Type  | Required | Description                                      |
@@ -454,9 +433,7 @@ None.
 
 ### GET /v1/status
 
-**System health.** Returns the current operational status of the INFERNIS API and its underlying data pipelines. Use this endpoint for monitoring and integration health checks.
-
-**Tier:** Free, Pro, Enterprise (no rate limit applied)
+**System health.** Returns the current operational status of the INFERNIS API and its underlying data pipelines. Use this endpoint for monitoring and integration health checks. No rate limit is applied to this endpoint.
 
 #### Query Parameters
 
@@ -480,8 +457,6 @@ None.
 ### GET /v1/coverage
 
 **Coverage metadata.** Returns the BC boundary polygon and grid metadata, including total cell count, resolution, and coordinate reference system information. Useful for initializing map views or validating coordinate inputs before making risk queries.
-
-**Tier:** Free, Pro, Enterprise
 
 #### Query Parameters
 
@@ -651,7 +626,7 @@ Fuel types follow the Canadian Forest Fire Behaviour Prediction (FBP) System cla
 
 ## Rate Limiting
 
-All API requests (except `/v1/status`) are subject to rate limiting based on your tier.
+All API requests (except `/v1/status`) are subject to a daily rate limit. The limit is configurable per key; the default is set by the `INFERNIS_DAILY_RATE_LIMIT` environment variable.
 
 ### Rate Limit Headers
 
@@ -659,7 +634,7 @@ Every response includes the following headers to help you manage request pacing.
 
 | Header                  | Type   | Description                                                                                     |
 |-------------------------|--------|-------------------------------------------------------------------------------------------------|
-| `X-RateLimit-Limit`     | int    | Maximum number of requests allowed per day for your tier.                                       |
+| `X-RateLimit-Limit`     | int    | Maximum number of requests allowed per day for your API key.                                    |
 | `X-RateLimit-Remaining` | int    | Number of requests remaining in the current daily window.                                       |
 | `X-RateLimit-Reset`     | string | Reset time indicator (currently returns `"midnight PST"`).                                      |
 
@@ -669,7 +644,7 @@ When the rate limit is exceeded, the API returns a `429` status code with the fo
 
 ```json
 {
-  "detail": "Rate limit exceeded. Daily limit of 50 requests reached. Resets at 2026-07-16T00:00:00-07:00.",
+  "detail": "Rate limit exceeded. Daily request limit reached. Resets at 2026-07-16T00:00:00-07:00.",
   "retry_after_seconds": 3600
 }
 ```
@@ -702,7 +677,7 @@ All errors follow a consistent JSON format.
 |--------|--------------------------|------------------------------------------------------------------------------------------------------------|
 | 400    | Bad Request              | Malformed parameters, missing required fields, non-numeric coordinate values.                              |
 | 401    | Unauthorized             | Missing or invalid `X-API-Key` header.                                                                     |
-| 403    | Forbidden                | Valid key but insufficient tier for the requested endpoint (e.g., Free tier accessing `/v1/risk/grid`).    |
+| 403    | Forbidden                | Valid key but not authorized for this request (e.g., key has been deactivated or flagged).                  |
 | 404    | Not Found                | Coordinates outside BC coverage area, or endpoint does not exist.                                          |
 | 422    | Unprocessable Entity     | Parameters are syntactically valid but semantically incorrect (e.g., latitude of 75.0, which is outside BC). |
 | 429    | Too Many Requests        | Rate limit exceeded. See [Rate Limiting](#rate-limiting).                                                  |
@@ -732,14 +707,6 @@ All errors follow a consistent JSON format.
 ```json
 {
   "detail": "Invalid or missing API key. Provide a valid key in the X-API-Key header."
-}
-```
-
-**Tier restriction (403):**
-
-```json
-{
-  "detail": "Your current tier (Free) does not have access to the /v1/risk/grid endpoint. Upgrade to Pro or Enterprise at https://api.infernis.ca/static/dashboard.html."
 }
 ```
 
@@ -778,12 +745,12 @@ remaining = response.headers.get("X-RateLimit-Remaining")
 print(f"Requests remaining today: {remaining}")
 ```
 
-### Python -- Grid Query (Pro tier)
+### Python -- Grid Query
 
 ```python
 import requests
 
-API_KEY = "your_pro_api_key_here"
+API_KEY = "your_api_key_here"
 BASE_URL = "https://api.infernis.ca/v1"
 
 headers = {
@@ -826,8 +793,8 @@ curl -H "X-API-Key: your_api_key_here" \
 curl -H "X-API-Key: your_api_key_here" \
   "https://api.infernis.ca/v1/conditions/49.25/-121.77"
 
-# Grid query (Pro tier) — bbox is south,west,north,east
-curl -H "X-API-Key: your_pro_api_key_here" \
+# Grid query — bbox is south,west,north,east
+curl -H "X-API-Key: your_api_key_here" \
   "https://api.infernis.ca/v1/risk/grid?bbox=49.0,-122.5,50.0,-121.0"
 
 # Historical fires within 50km over the past 10 years
@@ -837,8 +804,8 @@ curl -H "X-API-Key: your_api_key_here" \
 # System status (no API key required for basic check)
 curl "https://api.infernis.ca/v1/status"
 
-# Download heatmap as PNG (Enterprise tier)
-curl -H "X-API-Key: your_enterprise_api_key_here" \
+# Download heatmap as PNG
+curl -H "X-API-Key: your_api_key_here" \
   -o heatmap.png \
   "https://api.infernis.ca/v1/risk/heatmap?bbox=49.0,-122.5,50.0,-121.0"
 ```
@@ -947,14 +914,13 @@ Authorization: Bearer <firebase-id-token>
 
 ### POST /api/dashboard/register
 
-**Idempotent registration.** On first call, creates a user account, generates a free-tier API key, and returns the plaintext key. On subsequent calls, returns the user profile without the key.
+**Idempotent registration.** On first call, creates a user account, generates an API key, and returns the plaintext key. On subsequent calls, returns the user profile without the key.
 
 **First-time response (200):**
 ```json
 {
   "email": "user@example.com",
   "display_name": "Jane Doe",
-  "tier": "free",
   "api_key": "a3f8c9e1d2b4...64 hex characters"
 }
 ```
@@ -964,9 +930,8 @@ Authorization: Bearer <firebase-id-token>
 {
   "email": "user@example.com",
   "display_name": "Jane Doe",
-  "tier": "free",
   "key_preview": "a3f8****...****d2e1",
-  "daily_limit": 50,
+  "daily_limit": 100,
   "billing_cycle_start": "2026-02-15"
 }
 ```
@@ -980,9 +945,8 @@ Returns the authenticated user's profile with a masked key preview.
 {
   "email": "user@example.com",
   "display_name": "Jane Doe",
-  "tier": "free",
   "key_preview": "a3f8****...****d2e1",
-  "daily_limit": 50,
+  "daily_limit": 100,
   "billing_cycle_start": "2026-02-15"
 }
 ```
@@ -997,8 +961,7 @@ Returns current billing cycle usage.
 ```json
 {
   "requests_today": 42,
-  "daily_limit": 50,
-  "tier": "free",
+  "daily_limit": 100,
   "billing_cycle_start": "2026-02-15",
   "billing_cycle_end": "2026-03-17",
   "days_remaining": 30
@@ -1036,10 +999,10 @@ X-API-Sunset: 2028-01-01
 
 ## Support
 
-| Channel                          | Availability           | Tier                  |
-|----------------------------------|------------------------|-----------------------|
-| Dashboard: api.infernis.ca/static/index.html | Always       | All                   |
-| Email: hello@argonbi.com          | 48-hour SLA            | Pro, Enterprise       |
-| Dedicated support                | 4-hour SLA             | Enterprise            |
+| Channel                                      | Availability           |
+|----------------------------------------------|------------------------|
+| Dashboard: api.infernis.ca/static/index.html | Always                 |
+| GitHub Issues                                | Community support      |
+| Email: hello@argonbi.com                     | 48-hour SLA            |
 
-For bug reports, feature requests, or tier upgrades, email hello@argonbi.com.
+For bug reports, feature requests, or custom rate limits, email hello@argonbi.com.
