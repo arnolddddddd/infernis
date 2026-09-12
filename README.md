@@ -1,14 +1,29 @@
 # INFERNIS — fire weather
 
 **A tested implementation of the Canadian Forest Fire Weather Index System, from the engine
-behind [Argon BI Systems](https://infernis.ca)' environmental risk platforms.**
+behind [ArgonBI Systems](https://argonbi.com)'s environmental risk platforms.**
 
 This is the fire-weather core of INFERNIS: FFMC, DMC, DC, ISI, BUI and FWI, computed to the
 standard CFFDRS equations, with the fuel-type and biogeoclimatic vocabularies needed to use them
 with British Columbia data.
 
+> STATUS — access and product lineage
+>
+> - The public hosted map and free API are currently offline during a rebuild.
+> - The original Infernis daily/developer track will return as **IGNIS** (product/API name).
+> - CREST (flood) and EMBER (wildfire) are separate, always‑paid commercial products delivered via ArSite — not open‑sourced here and not a rename of this repository.
+> - Join the waitlist or contact us via [argonbi.com](https://argonbi.com/) or [arsite.ca](https://arsite.ca/).
+>
+> No fake ship dates. Build order: CREST+EMBER MVP first; then IGNIS API returns (free tier + paid overage).
+
 It is published so the arithmetic underneath our fire products can be checked by anyone, against
 a standard that is itself public.
+
+## Lineage: Infernis → IGNIS
+
+- This repository is the original Infernis open‑source fire‑weather core.
+- The original Infernis daily/developer track becomes **IGNIS** (product/API name).
+- CREST (flood) and EMBER (wildfire) are separate commercial property‑hazard products offered via ArSite; they are not open‑sourced in this repository and are not a rename of it.
 
 ## Check it yourself
 
@@ -55,10 +70,14 @@ correctly.
 
 ## Using the engine
 
-The engine itself is free to use at **[ArSite.ca](https://arsite.ca)** — a province-wide wildfire
-risk map that needs no account, a reading for any B.C. address with a free one, and a rate-limited
-API key. Flood modelling, portfolio-scale property scoring and higher-volume API access are the
-commercial product.
+The previously hosted free map and API at **[ArSite.ca](https://arsite.ca)** are **offline during a
+rebuild**.
+
+- CREST (flood) and EMBER (wildfire) commercial products are being delivered first via ArSite.
+- The daily developer/API track will return as **IGNIS** (free tier + paid overage) once back online.
+- For access requests or to join the waitlist, contact us via **[argonbi.com](https://argonbi.com/)** or **[arsite.ca](https://arsite.ca/)**.
+
+The Python package in this repository remains available for local use, validation and testing.
 
 ## On measurement
 
@@ -80,4 +99,4 @@ Resources Canada, the Province of British Columbia, NASA and Copernicus.
 
 Apache 2.0. See [LICENSE](LICENSE).
 
-INFERNIS is the environmental risk engine built by Argon BI Systems Inc.
+INFERNIS is the environmental risk engine built by ArgonBI Systems Inc. See **[argonbi.com](https://argonbi.com/)**.
